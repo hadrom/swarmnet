@@ -350,11 +350,15 @@ export default function Home() {
     setError(null);
     try {
       const idx = messages.findIndex((m) => m.id === msg.id);
-      const priorUser = [...messages]
-        .slice(0, idx)
+      const prior = messages.slice(0, idx + 1);
+      const priorUser = [...prior]
         .reverse()
         .find((m) => m.role === "user");
       const question = priorUser?.content ?? msg.content;
+      const history = prior.map((m) => ({
+        role: m.role,
+        content: m.content,
+      }));
       const res = await fetch("/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -362,6 +366,7 @@ export default function Home() {
           question,
           liteAnswer: msg.content,
           hookLabel: hook?.label,
+          history,
         }),
       });
       const data = await res.json();

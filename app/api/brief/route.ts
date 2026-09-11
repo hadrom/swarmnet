@@ -13,7 +13,13 @@ export async function POST(req: Request) {
       );
     }
     const hookLabel = body.hookLabel ? String(body.hookLabel) : undefined;
-    const result = await generateBrief({ question, liteAnswer, hookLabel });
+    const history = Array.isArray(body.history) ? body.history : [];
+    const result = await generateBrief({
+      question,
+      liteAnswer,
+      hookLabel,
+      history,
+    });
     return NextResponse.json(result);
   } catch (err) {
     console.error(err);

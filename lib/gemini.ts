@@ -132,6 +132,13 @@ async function generateJson<T>(
 
   const tryModel = async (modelId: string) => {
     const isGemma = modelId.startsWith("gemma-");
+    const isLite = modelId.includes("flash-lite");
+    // Depth calls request HIGH thinking; lite fallbacks must not inherit that.
+    const thinking = isLite
+      ? ThinkingLevel.MINIMAL
+      : isGemma
+        ? ThinkingLevel.MINIMAL
+        : opts.thinking;
     const response = await client.models.generateContent({
       model: modelId,
       contents: isGemma
@@ -149,8 +156,8 @@ async function generateJson<T>(
             }
           : {
               responseMimeType: "application/json" as const,
-              ...(opts.thinking
-                ? { thinkingConfig: { thinkingLevel: opts.thinking } }
+              ...(thinking
+                ? { thinkingConfig: { thinkingLevel: thinking } }
                 : {}),
             }),
       },
@@ -213,8 +220,13 @@ export async function generateBrief(input: {
   question: string;
   liteAnswer: string;
   hookLabel?: string;
+  history?: { role: string; content: string }[];
 }): Promise<BriefResponse & { modelUsed: string; mocked: boolean }> {
-  const user = `Original question:\n${input.question}\n\nLite answer:\n${input.liteAnswer}\n\nFocus hook:\n${input.hookLabel ?? "(full elaborate)"}`;
+  const historyBlock = (input.history ?? [])
+    .slice(-12)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+  const user = `Conversation so far (established context — treat earlier turns as given):\n${historyBlock || "(none)"}\n\nTrigger question for this brief:\n${input.question}\n\nLite answer being expanded:\n${input.liteAnswer}\n\nFocus hook:\n${input.hookLabel ?? "(full elaborate)"}`;
 
   try {
     const { data, modelUsed } = await generateJson<{ markdown?: string }>(
@@ -232,15 +244,17 @@ export async function generateBrief(input: {
         ],
       },
     );
+    const markdown = String(data.markdown ?? "").trim();
+    if (!markdown) throw new Error("Empty model response");
     return {
-      markdown: String(data.markdown ?? ""),
+      markdown,
       modelUsed,
       mocked: false,
     };
   } catch (err) {
     console.error("brief failed, using mock:", err);
     return {
-      ...mockBrief(input.question, input.hookLabel),
+      ...mockBrief(input.question, input.hookLabel, input.history),
       modelUsed: "mock",
       mocked: true,
     };

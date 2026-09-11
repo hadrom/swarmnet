@@ -23,9 +23,11 @@ The markdown MUST use these exact headings:
 
 Rules:
 - Document voice. No filler. No "as an AI".
+- Treat the conversation history as established context. Follow-up questions inherit the topic, entities, and constraints already stated earlier in the thread.
 - Expand the lite answer for the given focus (hook) if provided; otherwise cover the whole question.
 - Keep the whole brief under ~400 words.
-- Prefer bullets under each heading except Bottom line (2-4 sentences).`;
+- Prefer bullets under each heading except Bottom line (2-4 sentences).
+- Unknowns: ONLY list facts still genuinely unresolved after reading the full conversation + lite answer. Do NOT restate as unknown anything the user or the lite answer already made clear. If nothing material remains unknown, write a single bullet: "None material from the conversation so far."`;
 
 export const RESEARCH_SYSTEM = `You are the dialectic partner AND the scribe for a living working paper ("sediment").
 You do NOT give chatty essays. You apply the user's move to the sediment.

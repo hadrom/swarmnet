@@ -21,26 +21,38 @@ export function mockLite(question: string): LiteResponse {
   };
 }
 
-export function mockBrief(question: string, hook?: string): BriefResponse {
+export function mockBrief(
+  question: string,
+  hook?: string,
+  history?: { role: string; content: string }[],
+): BriefResponse {
   const focus = hook ?? "full elaborate";
+  const prior = (history ?? [])
+    .filter((m) => m.role === "user")
+    .map((m) => m.content)
+    .slice(-3);
+  const contextLine =
+    prior.length > 0
+      ? prior.map((q, i) => `${i + 1}. ${q}`).join(" ")
+      : question;
   return {
     markdown: `## Bottom line
-Prototype the interaction pattern before investing in model quality. Focus for this brief: **${focus}**.
+Expand the compressed answer in light of the thread so far. Focus for this brief: **${focus}**.
 
 ## What this depends on
-- Operators will accept short answers if depth is one click away
-- The brief pane stays a document, not a second chat
-- Latency of the lite lane stays under ~2s
+- Prior turns in this consult thread establish the topic and constraints
+- The lite answer is treated as the starting claim, not a standalone prompt
+- Operators only open a brief when the short reply is not enough
 
 ## Detail
-Question under review: ${question}
+Thread context: ${contextLine}
 
-The consult lane should refuse to ramble. Expansion is explicit. In a cofounder demo, show that most questions never need the brief — and that when they do, the brief is structured (bottom line → dependencies → detail → unknowns).
+Trigger question: ${question}
+
+This mock brief is used when live depth models are unavailable. In production, the brief should inherit entities and constraints from earlier turns rather than treating the latest follow-up as a new topic.
 
 ## Unknowns
-- Whether your on-prem model will obey length constraints without token caps
-- How often operators actually click Elaborate in real incidents
-- Whether sediment (research mode) should share history with consult`,
+- None material from the conversation so far.`,
   };
 }
 
