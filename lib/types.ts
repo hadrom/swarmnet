@@ -63,10 +63,10 @@ export type ThreadMessage = {
 export const FULL_BRIEF_KEY = "full";
 
 export const RESEARCH_MOVES: Hook[] = [
-  { id: "attack", label: "Attack this" },
-  { id: "contradiction", label: "Find contradiction" },
-  { id: "falsify", label: "What would falsify" },
-  { id: "steelman", label: "Steelman other side" },
+  { id: "weak-spots", label: "Weak spots" },
+  { id: "assumptions", label: "Key assumptions" },
+  { id: "counter-evidence", label: "Counter-evidence" },
+  { id: "decision-criteria", label: "Decision criteria" },
 ];
 
 export function emptySediment(): Sediment {
@@ -124,7 +124,7 @@ export function seedSedimentFromAnswer(
   return {
     claim: claim.slice(0, 600),
     tensions: [
-      "Provisional claim — needs pressure before treating as decided",
+      "Provisional claim — still needs scrutiny before treating as decided",
     ],
     evidence: brief
       ? [`Seeded from brief “${brief.title}” on the consult answer`]
@@ -132,6 +132,6 @@ export function seedSedimentFromAnswer(
     openQuestions:
       openQuestions.length > 0
         ? openQuestions
-        : ["What would falsify this claim?"],
+        : ["What would change this recommendation?"],
   };
 }

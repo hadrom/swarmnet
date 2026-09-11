@@ -79,18 +79,18 @@ export function mockResearch(
       }
     : {
         claim: `Provisional: ${move.slice(0, 180)}`,
-        tensions: ["Claim is still thin — needs pressure"],
+        tensions: ["Claim is still thin — needs more scrutiny"],
         evidence: [],
         openQuestions: [
-          "What would falsify this?",
-          "Who is the primary user?",
+          "What would change this recommendation?",
+          "Who owns the decision?",
         ],
       };
 
   return {
     reply: hasClaim
-      ? "Applied your move. Sediment updated — check the diff for what strengthened or opened."
-      : "Bootstrapped a provisional claim from your first move. Attack it or add a constraint next.",
+      ? `On “${move.slice(0, 72)}${move.length > 72 ? "…" : ""}”: keep the working claim provisional, name the weakest assumption, and only escalate if that assumption fails under the current constraints.`
+      : `Compressed take: treat “${move.slice(0, 72)}${move.length > 72 ? "…" : ""}” as a scoped decision. Ship the smallest reversible step, name an owner, and keep the claim open until the kill criterion is clear.`,
     sediment: next,
     delta: {
       ...emptyDelta(),
@@ -99,10 +99,10 @@ export function mockResearch(
       stillOpen: next.openQuestions.slice(0, 2),
     },
     hooks: [
-      { id: "attack", label: "Attack this" },
-      { id: "contradiction", label: "Find contradiction" },
-      { id: "falsify", label: "What would falsify" },
-      { id: "steelman", label: "Steelman other side" },
+      { id: "weak-spots", label: "Weak spots" },
+      { id: "assumptions", label: "Key assumptions" },
+      { id: "counter-evidence", label: "Counter-evidence" },
+      { id: "decision-criteria", label: "Decision criteria" },
     ],
   };
 }

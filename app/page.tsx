@@ -89,8 +89,8 @@ function SedimentView({
           Sediment is empty
         </p>
         <p>
-          Pressure-test an answer to seed a working claim here. Short chat
-          moves then revise this memo.
+          Pressure-test an answer to seed a working claim here. Keep asking
+          as usual — this memo updates in the background.
         </p>
       </div>
     );
@@ -342,7 +342,7 @@ export default function Home() {
     setBusy(true);
     try {
       if (researchActive) {
-        // Dialectic move against sediment
+        // Same consult chat; sediment updates in parallel
         setSideKind("sediment");
         setOpenBrief(null);
         const data = await sendResearch(question, messages, sediment);
@@ -455,7 +455,7 @@ export default function Home() {
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
     if (researchActive && !msg.confidence) {
-      // Research replies: hooks are dialectic moves
+      // Research replies: chips are follow-up prompts (same as typing)
       void onSubmit(hook.label);
       return;
     }
@@ -463,8 +463,8 @@ export default function Home() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      <header className="border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+    <div className="flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
+      <header className="shrink-0 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
@@ -480,7 +480,7 @@ export default function Home() {
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
               Consult is the spine. Elaborate opens a brief. Pressure-test
-              branches into sediment dialectic.
+              keeps the same chat voice while sediment builds beside it.
             </p>
           </div>
           <div className="flex items-center gap-2">
@@ -505,7 +505,7 @@ export default function Home() {
                   variant="ghost"
                   size="sm"
                   onClick={exitResearch}
-                  title="Return to plain consult replies"
+                  title="Return to consult without sediment"
                 >
                   Back to consult
                 </Button>
@@ -517,17 +517,19 @@ export default function Home() {
 
       <main
         className={cn(
-          "mx-auto grid w-full max-w-7xl flex-1 gap-0",
-          showSidePane ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1",
+          "mx-auto grid w-full max-w-7xl min-h-0 flex-1 gap-0 overflow-hidden",
+          showSidePane
+            ? "grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1 lg:grid-cols-2"
+            : "grid-cols-1",
         )}
       >
         <section
           className={cn(
-            "flex min-h-[60vh] flex-col",
-            showSidePane && "border-r border-zinc-200 dark:border-zinc-800",
+            "flex min-h-0 flex-col overflow-hidden",
+            showSidePane && "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
           )}
         >
-          <ScrollArea className="flex-1 px-4 py-4">
+          <ScrollArea className="min-h-0 flex-1 px-4 py-4">
             {messages.length === 0 ? (
               <div
                 className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
@@ -538,7 +540,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Answers stay short. Elaborate for a brief. Pressure-test
-                    when you want a living claim to argue with.
+                    when you want a living working claim beside the chat.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -619,7 +621,7 @@ export default function Home() {
                                       ? saved
                                         ? "Reopen saved brief"
                                         : "Elaborate on this"
-                                      : "Apply this dialectic move"
+                                      : "Ask this follow-up"
                                   }
                                   className={cn(
                                     "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
@@ -680,7 +682,7 @@ export default function Home() {
                                       ? "border-amber-600 bg-amber-600 text-white"
                                       : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70",
                                   )}
-                                  title="Promote this answer into a living claim to argue with"
+                                  title="Keep chatting as usual while a living claim builds in sediment"
                                 >
                                   <FlaskConical className="h-3 w-3" />
                                   {msg.promoted
@@ -728,7 +730,7 @@ export default function Home() {
             )}
           </ScrollArea>
 
-          <div className="border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+          <div className="shrink-0 border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
             {error ? (
               <p className="mb-2 text-xs text-red-600 dark:text-red-400">
                 {error}
@@ -768,7 +770,7 @@ export default function Home() {
                 rows={2}
                 placeholder={
                   researchActive
-                    ? "Attack, constrain, or falsify the claim…"
+                    ? "Ask a follow-up — sediment updates beside the chat…"
                     : "Ask a consult question…"
                 }
                 className="min-h-[44px] flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
@@ -786,14 +788,14 @@ export default function Home() {
         </section>
 
         {showSidePane ? (
-          <section className="flex min-h-[40vh] flex-col bg-white dark:bg-zinc-950 lg:min-h-0">
-            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+          <section className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
+            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">{paneTitle}</h2>
                 <p className="text-xs text-zinc-500">
                   {sideKind === "brief"
                     ? "Snapshot of one answer — minimize anytime"
-                    : "Living working paper revised by each move"}
+                    : "Living memo updated as you keep asking"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
@@ -821,7 +823,7 @@ export default function Home() {
                 </Button>
               </div>
             </div>
-            <ScrollArea className="flex-1 px-4 py-4">
+            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
               {sideKind === "brief" && activeBrief ? (
                 <SimpleMarkdown text={activeBrief.brief.markdown} />
               ) : sideKind === "sediment" ? (

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Two-lane LLM demo",
   description:
-    "Consult (compressed answers + on-demand brief) and Research (dialectic + sediment) interaction prototype.",
+    "Consult (compressed answers + on-demand brief) and Research (same chat voice + living sediment) interaction prototype.",
 };
 
 export default function RootLayout({

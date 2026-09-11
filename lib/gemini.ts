@@ -270,7 +270,7 @@ export async function reviseSediment(input: {
     .slice(-8)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Current sediment JSON:\n${JSON.stringify(input.sediment)}\n\nRecent moves:\n${historyBlock || "(none)"}\n\nUser move:\n${input.move}`;
+  const user = `Current sediment JSON (update quietly; do not narrate it in reply):\n${JSON.stringify(input.sediment)}\n\nRecent conversation:\n${historyBlock || "(none)"}\n\nUser message:\n${input.move}`;
 
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(

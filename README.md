@@ -1,6 +1,6 @@
 # Two-lane LLM demo
 
-Local prototype for cofounder demos: **Consult** is the spine (compressed answers + on-demand brief). **Research** is a branch you enter via **Pressure-test** — dialectic moves revise living sediment. Gemini is a disposable stand-in for an on-prem model.
+Local prototype for cofounder demos: **Consult** is the spine (compressed answers + on-demand brief). **Research** is a branch you enter via **Pressure-test** — same consult chat voice, with living sediment updating beside the thread. Gemini is a disposable stand-in for an on-prem model.
 
 ## Run
 
@@ -23,10 +23,10 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 ### Research (branch)
 
 - On any consult answer, click **Pressure-test** to seed sediment from that answer (and open/saved brief if present)
-- Composer switches to dialectic moves; right pane shows living **sediment**: claim, tensions, evidence, open questions
-- Each move returns a “this turn” diff
+- Keep chatting as in consult (amber research chrome); right pane shows living **sediment**: claim, tensions, evidence, open questions
+- Each turn still returns a “this turn” sediment diff without changing chat voice
 - **Compact** rewrites the sediment tighter via `gemini-3.8-flash`
-- **Back to consult** returns the composer to plain consult replies (sediment stays in memory until you re-seed)
+- **Back to consult** leaves research chrome (sediment stays in memory until you re-seed)
 
 ## Models
 
@@ -43,8 +43,8 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 2. Notice the answer is one paragraph. Do **not** expand yet.
 3. Click a chip or **Elaborate** — brief opens on the right. Minimize if you want.
 4. Click **Pressure-test** on that answer — sediment seeds and opens.
-5. Use a move chip (Attack this, Find contradiction, …) or type your own. Watch sediment + “this turn” update.
-6. Click **Compact**, then **Back to consult** if you want normal Q&A again.
+5. Ask a normal follow-up (or use a chip like Weak spots). Watch sediment + “this turn” update while the reply stays consult-like.
+6. Click **Compact**, then **Back to consult** if you want consult without sediment.
 
 ## Swap to on-prem later
 
