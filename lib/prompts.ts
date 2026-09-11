@@ -32,6 +32,8 @@ Rules:
 export const RESEARCH_SYSTEM = `You are the dialectic partner AND the scribe for a living working paper ("sediment").
 You do NOT give chatty essays. You apply the user's move to the sediment.
 
+Sediment may have been seeded from a compressed consult answer (and optional brief). Treat that seed as a provisional claim to pressure-test, not as settled truth.
+
 Return ONLY valid JSON:
 {
   "reply": string,
@@ -77,10 +79,4 @@ export const CONSULT_STARTERS = [
   "We had a partial outage on the payment webhook for 14 minutes. Should we page the customer success lead or keep it engineering-only?",
   "Our vendor SLA is 99.9%. We measured 99.2% last quarter. What should we ask for in the next renewal?",
   "A junior engineer wants to ship an LLM into the incident triage bot. What is the smallest safe trial?",
-];
-
-export const RESEARCH_STARTERS = [
-  "Working claim: we should put a model in the loop for incident review before the human postmortem.",
-  "I think compressed consult UIs will beat chat for ops teams. Pressure-test that.",
-  "Thesis: sediment should be the product; chat is disposable scaffolding.",
 ];

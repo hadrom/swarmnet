@@ -1,6 +1,6 @@
 # Two-lane LLM demo
 
-Local prototype for a **Consult** lane (compressed answers + on-demand brief) and a **Research** lane (dialectic moves that revise living sediment). Built to show cofounders an interaction pattern — not a product. Gemini is a disposable stand-in for an on-prem model.
+Local prototype for cofounder demos: **Consult** is the spine (compressed answers + on-demand brief). **Research** is a branch you enter via **Pressure-test** — dialectic moves revise living sediment. Gemini is a disposable stand-in for an on-prem model.
 
 ## Run
 
@@ -12,20 +12,21 @@ npm run dev
 
 Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
-## Modes
+## Flow
 
-### Consult
+### Consult (default)
 
 - Every turn uses `gemini-3.5-flash-lite` → one paragraph + drill chips
-- **Elaborate** / chip → `gemini-3.8-flash` writes a structured brief in the right pane
+- **Elaborate** / chip → `gemini-3.8-flash` writes a structured brief in the right pane (snapshot, minimizable, persisted per answer)
 - Follow-ups stay in the left thread (no chat inside the brief)
 
-### Research
+### Research (branch)
 
-- Left thread stays short (dialectic moves)
-- Right pane holds **sediment**: claim, tensions, evidence, open questions
+- On any consult answer, click **Pressure-test** to seed sediment from that answer (and open/saved brief if present)
+- Composer switches to dialectic moves; right pane shows living **sediment**: claim, tensions, evidence, open questions
 - Each move returns a “this turn” diff
 - **Compact** rewrites the sediment tighter via `gemini-3.8-flash`
+- **Back to consult** returns the composer to plain consult replies (sediment stays in memory until you re-seed)
 
 ## Models
 
@@ -38,11 +39,12 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ## Demo script
 
-1. Stay on **Consult**. Click a starter (or ask an ops question).
+1. Click a starter (or ask an ops question).
 2. Notice the answer is one paragraph. Do **not** expand yet.
-3. Click a chip or **Elaborate** — brief opens on the right.
-4. Switch to **Research**. Paste a working claim. Object twice.
-5. Watch sediment + “this turn” update. Click **Compact**.
+3. Click a chip or **Elaborate** — brief opens on the right. Minimize if you want.
+4. Click **Pressure-test** on that answer — sediment seeds and opens.
+5. Use a move chip (Attack this, Find contradiction, …) or type your own. Watch sediment + “this turn” update.
+6. Click **Compact**, then **Back to consult** if you want normal Q&A again.
 
 ## Swap to on-prem later
 

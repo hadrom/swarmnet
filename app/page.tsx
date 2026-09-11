@@ -5,6 +5,7 @@ import {
   ArrowUp,
   ChevronRight,
   FileText,
+  FlaskConical,
   Loader2,
   Maximize2,
   Minimize2,
@@ -14,16 +15,21 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
-import { CONSULT_STARTERS, RESEARCH_STARTERS } from "@/lib/prompts";
+import { CONSULT_STARTERS } from "@/lib/prompts";
 import type {
   Hook,
-  Mode,
   SavedBrief,
   Sediment,
   SedimentDelta,
   ThreadMessage,
 } from "@/lib/types";
-import { FULL_BRIEF_KEY, emptyDelta, emptySediment } from "@/lib/types";
+import {
+  FULL_BRIEF_KEY,
+  RESEARCH_MOVES,
+  emptyDelta,
+  emptySediment,
+  seedSedimentFromAnswer,
+} from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function uid() {
@@ -83,8 +89,8 @@ function SedimentView({
           Sediment is empty
         </p>
         <p>
-          Make a move on the left. The working claim, tensions, and open
-          questions accumulate here — not in the chat transcript.
+          Pressure-test an answer to seed a working claim here. Short chat
+          moves then revise this memo.
         </p>
       </div>
     );
@@ -156,21 +162,21 @@ function DeltaLine({ label, items }: { label: string; items: string[] }) {
   );
 }
 
-type OpenBriefRef = {
-  messageId: string;
-  key: string;
-};
+type OpenBriefRef = { messageId: string; key: string };
+type SideKind = "brief" | "sediment";
 
 export default function Home() {
-  const [mode, setMode] = useState<Mode>("consult");
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelHint, setModelHint] = useState<string | null>(null);
 
-  /** Currently expanded brief in Consult; null = minimized / clean chat. */
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
+  const [researchActive, setResearchActive] = useState(false);
+  const [sideKind, setSideKind] = useState<SideKind | null>(null);
+  const [promotedFromId, setPromotedFromId] = useState<string | null>(null);
+  const [moveHooks, setMoveHooks] = useState<Hook[]>(RESEARCH_MOVES);
 
   const [sediment, setSediment] = useState<Sediment>(() => emptySediment());
   const [delta, setDelta] = useState<SedimentDelta | null>(null);
@@ -182,8 +188,6 @@ export default function Home() {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
-  const starters = mode === "consult" ? CONSULT_STARTERS : RESEARCH_STARTERS;
-
   const activeBrief = useMemo(() => {
     if (!openBrief) return null;
     const msg = messages.find((m) => m.id === openBrief.messageId);
@@ -192,36 +196,43 @@ export default function Home() {
     return { message: msg, brief, key: openBrief.key };
   }, [openBrief, messages]);
 
-  const briefPaneOpen = mode === "consult" && activeBrief !== null;
-  const showSidePane = mode === "research" || briefPaneOpen;
+  const showSidePane =
+    (sideKind === "brief" && activeBrief !== null) ||
+    (sideKind === "sediment" && researchActive);
+
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
   const paneTitle =
-    mode === "consult"
-      ? activeBrief
-        ? `Brief · ${activeBrief.brief.title}`
-        : "Brief"
+    sideKind === "brief" && activeBrief
+      ? `Brief · ${activeBrief.brief.title}`
       : "Sediment";
 
-  function switchMode(next: Mode) {
-    if (next === mode) return;
-    setMode(next);
-    setMessages([]);
-    setInput("");
-    setError(null);
-    setModelHint(null);
-    setOpenBrief(null);
-    setSediment(emptySediment());
-    setDelta(null);
-    setCompactNote(null);
+  function minimizeSide() {
+    if (sideKind === "brief") {
+      setOpenBrief(null);
+      setSideKind(researchActive ? "sediment" : null);
+      return;
+    }
+    // Minimize sediment → back to clean consult chat; sediment kept in memory
+    setSideKind(null);
   }
 
-  function minimizeBrief() {
+  function resumeSediment() {
     setOpenBrief(null);
+    setSideKind("sediment");
+    setResearchActive(true);
+  }
+
+  function exitResearch() {
+    setResearchActive(false);
+    setSideKind(null);
+    setDelta(null);
+    setMoveHooks(RESEARCH_MOVES);
   }
 
   function openSavedBrief(messageId: string, key: string) {
     setOpenBrief({ messageId, key });
+    setSideKind("brief");
   }
 
   function saveBriefOnMessage(
@@ -237,6 +248,34 @@ export default function Home() {
       ),
     );
     setOpenBrief({ messageId, key });
+    setSideKind("brief");
+  }
+
+  function pressureTest(msg: ThreadMessage) {
+    const preferredKey =
+      (openBrief?.messageId === msg.id ? openBrief.key : null) ??
+      (msg.briefs?.[FULL_BRIEF_KEY] ? FULL_BRIEF_KEY : null) ??
+      Object.keys(msg.briefs ?? {})[0] ??
+      null;
+    const brief = preferredKey ? msg.briefs?.[preferredKey] : null;
+    const seeded = seedSedimentFromAnswer(msg.content, brief ?? null);
+
+    setSediment(seeded);
+    setDelta({
+      ...emptyDelta(),
+      strengthened: ["Provisional claim seeded from consult"],
+      stillOpen: seeded.openQuestions.slice(0, 2),
+    });
+    setCompactNote(null);
+    setPromotedFromId(msg.id);
+    setMessages((prev) =>
+      prev.map((m) => (m.id === msg.id ? { ...m, promoted: true } : m)),
+    );
+    setOpenBrief(null);
+    setResearchActive(true);
+    setSideKind("sediment");
+    setMoveHooks(RESEARCH_MOVES);
+    setModelHint("sediment seeded · local");
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -302,7 +341,25 @@ export default function Home() {
     setMessages(nextThread);
     setBusy(true);
     try {
-      if (mode === "consult") {
+      if (researchActive) {
+        // Dialectic move against sediment
+        setSideKind("sediment");
+        setOpenBrief(null);
+        const data = await sendResearch(question, messages, sediment);
+        setSediment(data.sediment);
+        setDelta(data.delta ?? emptyDelta());
+        setCompactNote(null);
+        if (data.hooks?.length) setMoveHooks(data.hooks);
+        setMessages([
+          ...nextThread,
+          {
+            id: uid(),
+            role: "assistant",
+            content: data.reply,
+            hooks: data.hooks,
+          },
+        ]);
+      } else {
         const data = await sendConsult(question, messages);
         setMessages([
           ...nextThread,
@@ -313,20 +370,6 @@ export default function Home() {
             confidence: data.confidence,
             hooks: data.hooks,
             briefs: {},
-          },
-        ]);
-      } else {
-        const data = await sendResearch(question, messages, sediment);
-        setSediment(data.sediment);
-        setDelta(data.delta ?? emptyDelta());
-        setCompactNote(null);
-        setMessages([
-          ...nextThread,
-          {
-            id: uid(),
-            role: "assistant",
-            content: data.reply,
-            hooks: data.hooks,
           },
         ]);
       }
@@ -351,9 +394,7 @@ export default function Home() {
     try {
       const idx = messages.findIndex((m) => m.id === msg.id);
       const prior = messages.slice(0, idx + 1);
-      const priorUser = [...prior]
-        .reverse()
-        .find((m) => m.role === "user");
+      const priorUser = [...prior].reverse().find((m) => m.role === "user");
       const question = priorUser?.content ?? msg.content;
       const history = prior.map((m) => ({
         role: m.role,
@@ -401,6 +442,7 @@ export default function Home() {
       setSediment(data.sediment);
       setDelta(null);
       setCompactNote(data.note);
+      setSideKind("sediment");
       setModelHint(
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
@@ -412,11 +454,12 @@ export default function Home() {
   }
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
-    if (mode === "consult") {
-      void onElaborate(msg, hook);
-    } else {
+    if (researchActive && !msg.confidence) {
+      // Research replies: hooks are dialectic moves
       void onSubmit(hook.label);
+      return;
     }
+    void onElaborate(msg, hook);
   }
 
   return (
@@ -429,42 +472,45 @@ export default function Home() {
               <h1 className="truncate text-sm font-semibold tracking-tight">
                 Two-lane LLM demo
               </h1>
+              {researchActive ? (
+                <Badge className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                  research branch
+                </Badge>
+              ) : null}
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Consult = compressed answers. Research = dialectic + sediment.
-              Gemini is a stand-in for on-prem.
+              Consult is the spine. Elaborate opens a brief. Pressure-test
+              branches into sediment dialectic.
             </p>
           </div>
           <div className="flex items-center gap-2">
             {modelHint ? (
               <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
             ) : null}
-            <div className="flex rounded-lg border border-zinc-200 bg-zinc-100 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
-              <button
-                type="button"
-                onClick={() => switchMode("consult")}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-medium transition",
-                  mode === "consult"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
-                )}
-              >
-                Consult
-              </button>
-              <button
-                type="button"
-                onClick={() => switchMode("research")}
-                className={cn(
-                  "rounded-md px-3 py-1.5 text-xs font-medium transition",
-                  mode === "research"
-                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
-                )}
-              >
-                Research
-              </button>
-            </div>
+            {researchActive ? (
+              <>
+                {sideKind !== "sediment" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={resumeSediment}
+                  >
+                    <FlaskConical className="h-3.5 w-3.5" />
+                    Sediment
+                  </Button>
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={exitResearch}
+                  title="Return to plain consult replies"
+                >
+                  Back to consult
+                </Button>
+              </>
+            ) : null}
           </div>
         </div>
       </header>
@@ -483,21 +529,20 @@ export default function Home() {
         >
           <ScrollArea className="flex-1 px-4 py-4">
             {messages.length === 0 ? (
-              <div className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}>
+              <div
+                className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
+              >
                 <div>
                   <h2 className="text-base font-semibold">
-                    {mode === "consult"
-                      ? "Ask something operational"
-                      : "Open with a claim or a pressure move"}
+                    Ask something operational
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    {mode === "consult"
-                      ? "Clean chat by default. Elaborate opens a brief beside the thread — minimize anytime; saved briefs stay on the answer."
-                      : "Short moves on the left. The living memo grows on the right."}
+                    Answers stay short. Elaborate for a brief. Pressure-test
+                    when you want a living claim to argue with.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {starters.map((s) => (
+                  {CONSULT_STARTERS.map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -513,8 +558,13 @@ export default function Home() {
               <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
                 {messages.map((msg) => {
                   const savedEntries = Object.entries(msg.briefs ?? {});
-                  const isActiveMsg =
-                    briefPaneOpen && openBrief?.messageId === msg.id;
+                  const isBriefSource =
+                    sideKind === "brief" &&
+                    openBrief?.messageId === msg.id;
+                  const isPromotedSource = promotedFromId === msg.id;
+                  const isConsultAnswer =
+                    msg.role === "assistant" && msg.confidence != null;
+
                   return (
                     <div
                       key={msg.id}
@@ -529,8 +579,11 @@ export default function Home() {
                           msg.role === "user"
                             ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
                             : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
-                          isActiveMsg &&
+                          isBriefSource &&
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
+                          isPromotedSource &&
+                            researchActive &&
+                            "ring-2 ring-amber-500/70",
                         )}
                       >
                         {msg.content}
@@ -543,7 +596,14 @@ export default function Home() {
                               <Badge>confidence · {msg.confidence}</Badge>
                             ) : null}
 
-                            {msg.hooks?.map((hook) => {
+                            {(isConsultAnswer
+                              ? msg.hooks
+                              : researchActive
+                                ? msg.hooks?.length
+                                  ? msg.hooks
+                                  : moveHooks
+                                : msg.hooks
+                            )?.map((hook) => {
                               const saved = msg.briefs?.[hook.id];
                               const isOpen =
                                 openBrief?.messageId === msg.id &&
@@ -555,16 +615,19 @@ export default function Home() {
                                   disabled={busy}
                                   onClick={() => onHookClick(msg, hook)}
                                   title={
-                                    saved
-                                      ? "Reopen saved brief"
-                                      : "Elaborate on this"
+                                    isConsultAnswer
+                                      ? saved
+                                        ? "Reopen saved brief"
+                                        : "Elaborate on this"
+                                      : "Apply this dialectic move"
                                   }
                                   className={cn(
                                     "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                                     saved
                                       ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
                                       : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
-                                    isOpen && "ring-2 ring-zinc-400 ring-offset-1",
+                                    isOpen &&
+                                      "ring-2 ring-zinc-400 ring-offset-1",
                                   )}
                                 >
                                   {saved ? (
@@ -579,37 +642,56 @@ export default function Home() {
                               );
                             })}
 
-                            {mode === "consult" ? (
-                              <button
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void onElaborate(msg)}
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                  msg.briefs?.[FULL_BRIEF_KEY]
-                                    ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                    : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
-                                  openBrief?.messageId === msg.id &&
-                                    openBrief.key === FULL_BRIEF_KEY &&
-                                    "ring-2 ring-zinc-400 ring-offset-1",
-                                )}
-                              >
-                                {msg.briefs?.[FULL_BRIEF_KEY] ? (
-                                  <>
-                                    <FileText className="h-3 w-3" />
-                                    View brief
-                                  </>
-                                ) : (
-                                  <>
-                                    <Maximize2 className="h-3 w-3" />
-                                    Elaborate
-                                  </>
-                                )}
-                              </button>
+                            {isConsultAnswer ? (
+                              <>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => void onElaborate(msg)}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                    msg.briefs?.[FULL_BRIEF_KEY]
+                                      ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                      : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
+                                    openBrief?.messageId === msg.id &&
+                                      openBrief.key === FULL_BRIEF_KEY &&
+                                      "ring-2 ring-zinc-400 ring-offset-1",
+                                  )}
+                                >
+                                  {msg.briefs?.[FULL_BRIEF_KEY] ? (
+                                    <>
+                                      <FileText className="h-3 w-3" />
+                                      View brief
+                                    </>
+                                  ) : (
+                                    <>
+                                      <Maximize2 className="h-3 w-3" />
+                                      Elaborate
+                                    </>
+                                  )}
+                                </button>
+                                <button
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => pressureTest(msg)}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                    msg.promoted
+                                      ? "border-amber-600 bg-amber-600 text-white"
+                                      : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70",
+                                  )}
+                                  title="Promote this answer into a living claim to argue with"
+                                >
+                                  <FlaskConical className="h-3 w-3" />
+                                  {msg.promoted
+                                    ? "Re-seed research"
+                                    : "Pressure-test"}
+                                </button>
+                              </>
                             ) : null}
                           </div>
 
-                          {mode === "consult" && savedEntries.length > 1 ? (
+                          {isConsultAnswer && savedEntries.length > 1 ? (
                             <div className="flex flex-wrap gap-1">
                               {savedEntries.map(([key, brief]) => (
                                 <button
@@ -652,6 +734,21 @@ export default function Home() {
                 {error}
               </p>
             ) : null}
+            {researchActive ? (
+              <div className="mx-auto mb-2 flex max-w-lg flex-wrap gap-1.5">
+                {moveHooks.map((hook) => (
+                  <button
+                    key={hook.id}
+                    type="button"
+                    disabled={busy}
+                    onClick={() => void onSubmit(hook.label)}
+                    className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+                  >
+                    {hook.label}
+                  </button>
+                ))}
+              </div>
+            ) : null}
             <form
               className={cn("mx-auto flex items-end gap-2", chatMaxWidth)}
               onSubmit={(e) => {
@@ -670,9 +767,9 @@ export default function Home() {
                 }}
                 rows={2}
                 placeholder={
-                  mode === "consult"
-                    ? "Ask a consult question…"
-                    : "Make a dialectic move…"
+                  researchActive
+                    ? "Attack, constrain, or falsify the claim…"
+                    : "Ask a consult question…"
                 }
                 className="min-h-[44px] flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
               />
@@ -694,13 +791,13 @@ export default function Home() {
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">{paneTitle}</h2>
                 <p className="text-xs text-zinc-500">
-                  {mode === "consult"
-                    ? "Saved with the answer — minimize to return to chat"
+                  {sideKind === "brief"
+                    ? "Snapshot of one answer — minimize anytime"
                     : "Living working paper revised by each move"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {mode === "research" ? (
+                {sideKind === "sediment" ? (
                   <Button
                     type="button"
                     variant="outline"
@@ -711,24 +808,23 @@ export default function Home() {
                     <Minimize2 className="h-3.5 w-3.5" />
                     Compact
                   </Button>
-                ) : (
-                  <Button
-                    type="button"
-                    variant="ghost"
-                    size="sm"
-                    onClick={minimizeBrief}
-                    title="Minimize brief"
-                  >
-                    <X className="h-4 w-4" />
-                    <span className="ml-1 hidden sm:inline">Minimize</span>
-                  </Button>
-                )}
+                ) : null}
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={minimizeSide}
+                  title="Minimize pane"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="ml-1 hidden sm:inline">Minimize</span>
+                </Button>
               </div>
             </div>
             <ScrollArea className="flex-1 px-4 py-4">
-              {mode === "consult" && activeBrief ? (
+              {sideKind === "brief" && activeBrief ? (
                 <SimpleMarkdown text={activeBrief.brief.markdown} />
-              ) : mode === "research" ? (
+              ) : sideKind === "sediment" ? (
                 <SedimentView
                   sediment={sediment}
                   delta={delta}
