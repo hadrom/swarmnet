@@ -30,12 +30,54 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
+const NOTES_STORAGE_KEY = "two-lane-working-notes-v1";
+
+type PersistedNotes = {
+  notes: WorkingNotes;
+  chips: Hook[];
+  rootedFromId: string | null;
+};
+
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
 }
 
 function briefKeyFor(hook?: Hook) {
   return hook?.id ?? FULL_BRIEF_KEY;
+}
+
+function notesAreEmpty(notes: WorkingNotes) {
+  return (
+    !notes.topic &&
+    !notes.whereWeAre &&
+    notes.agreed.length === 0 &&
+    notes.stillOpen.length === 0 &&
+    notes.trail.length === 0
+  );
+}
+
+function loadPersisted(): PersistedNotes | null {
+  if (typeof window === "undefined") return null;
+  try {
+    const raw = sessionStorage.getItem(NOTES_STORAGE_KEY);
+    if (!raw) return null;
+    return JSON.parse(raw) as PersistedNotes;
+  } catch {
+    return null;
+  }
+}
+
+function persistNotes(payload: PersistedNotes) {
+  if (typeof window === "undefined") return;
+  try {
+    if (notesAreEmpty(payload.notes)) {
+      sessionStorage.removeItem(NOTES_STORAGE_KEY);
+      return;
+    }
+    sessionStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(payload));
+  } catch {
+    // ignore quota / private mode
+  }
 }
 
 function SimpleMarkdown({ text }: { text: string }) {
@@ -77,9 +119,7 @@ function NotesView({
   notes: WorkingNotes;
   tip?: string | null;
 }) {
-  const empty =
-    !notes.whereWeAre && notes.agreed.length === 0 && !notes.topic;
-  if (empty) {
+  if (notesAreEmpty(notes)) {
     return (
       <div className="flex h-full flex-col justify-center gap-2 text-sm text-zinc-500">
         <p className="font-medium text-zinc-700 dark:text-zinc-200">
@@ -182,19 +222,38 @@ export default function Home() {
   const [modelHint, setModelHint] = useState<string | null>(null);
 
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
-  const [discussActive, setDiscussActive] = useState(false);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
-  const [promotedFromId, setPromotedFromId] = useState<string | null>(null);
+  const [rootedFromId, setRootedFromId] = useState<string | null>(null);
   const [chips, setChips] = useState<Hook[]>(DISCUSS_CHIPS);
-
   const [notes, setNotes] = useState<WorkingNotes>(() => emptyNotes());
   const [tightenTip, setTightenTip] = useState<string | null>(null);
+  const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  // Restore notes from this browser tab session so minimize / refresh keep progress.
+  useEffect(() => {
+    const saved = loadPersisted();
+    if (saved && !notesAreEmpty(saved.notes)) {
+      setNotes(saved.notes);
+      setChips(saved.chips?.length ? saved.chips : DISCUSS_CHIPS);
+      setRootedFromId(saved.rootedFromId);
+    }
+    setHydrated(true);
+  }, []);
+
+  useEffect(() => {
+    if (!hydrated) return;
+    persistNotes({ notes, chips, rootedFromId });
+  }, [notes, chips, rootedFromId, hydrated]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
+
+  const hasNotes = !notesAreEmpty(notes);
+  const notesOpen = sideKind === "notes";
+  const showNotesDock = hasNotes && sideKind !== "notes";
 
   const activeBrief = useMemo(() => {
     if (!openBrief) return null;
@@ -206,7 +265,7 @@ export default function Home() {
 
   const showSidePane =
     (sideKind === "brief" && activeBrief !== null) ||
-    (sideKind === "notes" && discussActive);
+    (sideKind === "notes" && hasNotes);
 
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
@@ -220,22 +279,16 @@ export default function Home() {
   function minimizeSide() {
     if (sideKind === "brief") {
       setOpenBrief(null);
-      setSideKind(discussActive ? "notes" : null);
+      // Prefer returning to notes if they exist — never discard them.
+      setSideKind(hasNotes ? null : null);
       return;
     }
     setSideKind(null);
   }
 
-  function resumeNotes() {
+  function openNotesPane() {
     setOpenBrief(null);
     setSideKind("notes");
-    setDiscussActive(true);
-  }
-
-  function exitDiscuss() {
-    setDiscussActive(false);
-    setSideKind(null);
-    setChips(DISCUSS_CHIPS);
   }
 
   function openSavedBrief(messageId: string, key: string) {
@@ -259,26 +312,33 @@ export default function Home() {
     setSideKind("brief");
   }
 
-  function startDiscuss(msg: ThreadMessage) {
+  /** Open notes beside chat. Seeds only once; never wipes existing progress. */
+  function openDiscuss(msg: ThreadMessage, opts?: { restart?: boolean }) {
     const preferredKey =
       (openBrief?.messageId === msg.id ? openBrief.key : null) ??
       (msg.briefs?.[FULL_BRIEF_KEY] ? FULL_BRIEF_KEY : null) ??
       Object.keys(msg.briefs ?? {})[0] ??
       null;
     const brief = preferredKey ? msg.briefs?.[preferredKey] : null;
-    const seeded = seedNotesFromAnswer(msg.content, brief ?? null);
 
-    setNotes(seeded);
-    setTightenTip(null);
-    setPromotedFromId(msg.id);
+    if (opts?.restart || notesAreEmpty(notes)) {
+      const seeded = seedNotesFromAnswer(msg.content, brief ?? null);
+      setNotes(seeded);
+      setTightenTip(null);
+      setChips(DISCUSS_CHIPS);
+      setRootedFromId(msg.id);
+    }
+
     setMessages((prev) =>
       prev.map((m) => (m.id === msg.id ? { ...m, promoted: true } : m)),
     );
     setOpenBrief(null);
-    setDiscussActive(true);
     setSideKind("notes");
-    setChips(DISCUSS_CHIPS);
-    setModelHint("notes started · local");
+    setModelHint(
+      notesAreEmpty(notes) || opts?.restart
+        ? "notes started · local"
+        : "notes restored",
+    );
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -343,9 +403,12 @@ export default function Home() {
     setMessages(nextThread);
     setBusy(true);
     try {
-      if (discussActive) {
-        setSideKind("notes");
-        setOpenBrief(null);
+      // Once notes exist, every turn quietly updates them — even if the pane is minimized.
+      if (hasNotes) {
+        if (sideKind === "brief") {
+          setOpenBrief(null);
+          setSideKind("notes");
+        }
         const data = await sendDiscuss(question, messages, notes);
         setNotes(data.notes);
         setTightenTip(null);
@@ -453,7 +516,8 @@ export default function Home() {
   }
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
-    if (discussActive && !msg.confidence) {
+    // After notes exist, chips on later replies are follow-ups (same as typing).
+    if (hasNotes && msg.confidence == null) {
       void onSubmit(hook.label);
       return;
     }
@@ -470,46 +534,20 @@ export default function Home() {
               <h1 className="truncate text-sm font-semibold tracking-tight">
                 Two-lane LLM demo
               </h1>
-              {discussActive ? (
+              {hasNotes ? (
                 <Badge className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-                  discussing
+                  notes live
                 </Badge>
               ) : null}
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Consult is the spine. Elaborate opens a brief. Discuss keeps the
-              same chat voice while working notes build beside it.
+              One chat. Elaborate opens a brief. Discuss pins living notes beside
+              you — minimize anytime; progress stays.
             </p>
           </div>
-          <div className="flex items-center gap-2">
-            {modelHint ? (
-              <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
-            ) : null}
-            {discussActive ? (
-              <>
-                {sideKind !== "notes" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={resumeNotes}
-                  >
-                    <MessageSquare className="h-3.5 w-3.5" />
-                    Notes
-                  </Button>
-                ) : null}
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={exitDiscuss}
-                  title="Leave discuss mode"
-                >
-                  Back to consult
-                </Button>
-              </>
-            ) : null}
-          </div>
+          {modelHint ? (
+            <Badge className="hidden shrink-0 sm:inline-flex">{modelHint}</Badge>
+          ) : null}
         </div>
       </header>
 
@@ -539,7 +577,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Answers stay short. Elaborate for a brief. Discuss when you
-                    want a living agreement trail beside the chat.
+                    want a living agreement trail that sticks around.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -561,7 +599,7 @@ export default function Home() {
                   const savedEntries = Object.entries(msg.briefs ?? {});
                   const isBriefSource =
                     sideKind === "brief" && openBrief?.messageId === msg.id;
-                  const isPromotedSource = promotedFromId === msg.id;
+                  const isRootSource = rootedFromId === msg.id;
                   const isConsultAnswer =
                     msg.role === "assistant" && msg.confidence != null;
 
@@ -581,8 +619,8 @@ export default function Home() {
                             : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
                           isBriefSource &&
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
-                          isPromotedSource &&
-                            discussActive &&
+                          isRootSource &&
+                            hasNotes &&
                             "ring-2 ring-amber-500/70",
                         )}
                       >
@@ -598,7 +636,7 @@ export default function Home() {
 
                             {(isConsultAnswer
                               ? msg.hooks
-                              : discussActive
+                              : hasNotes
                                 ? msg.hooks?.length
                                   ? msg.hooks
                                   : chips
@@ -673,17 +711,21 @@ export default function Home() {
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => startDiscuss(msg)}
+                                  onClick={() => openDiscuss(msg)}
                                   className={cn(
                                     "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                    msg.promoted
+                                    hasNotes
                                       ? "border-amber-600 bg-amber-600 text-white"
                                       : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70",
                                   )}
-                                  title="Keep chatting as usual while a shared agreement trail builds beside the chat"
+                                  title={
+                                    hasNotes
+                                      ? "Open your living notes (progress is kept)"
+                                      : "Pin living notes beside this chat"
+                                  }
                                 >
                                   <MessageSquare className="h-3 w-3" />
-                                  {msg.promoted ? "Discuss from here" : "Discuss"}
+                                  {hasNotes ? "Open notes" : "Discuss"}
                                 </button>
                               </>
                             ) : null}
@@ -732,7 +774,34 @@ export default function Home() {
                 {error}
               </p>
             ) : null}
-            {discussActive ? (
+
+            {/* Sticky notes dock — the seamless handoff instead of header mode toggles */}
+            {showNotesDock ? (
+              <button
+                type="button"
+                onClick={openNotesPane}
+                className="mx-auto mb-2 flex w-full max-w-2xl items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:hover:bg-amber-950/80"
+              >
+                <span className="flex min-w-0 items-center gap-2">
+                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-800 dark:text-amber-200" />
+                  <span className="min-w-0">
+                    <span className="block truncate text-xs font-semibold text-amber-950 dark:text-amber-100">
+                      {notes.topic || "Working notes"}
+                    </span>
+                    <span className="block truncate text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                      {notes.agreed.length
+                        ? `${notes.agreed.length} agreed · ${notes.stillOpen.length} open`
+                        : "Tap to reopen — progress is kept"}
+                    </span>
+                  </span>
+                </span>
+                <span className="shrink-0 text-[11px] font-medium text-amber-900 dark:text-amber-100">
+                  Open
+                </span>
+              </button>
+            ) : null}
+
+            {hasNotes ? (
               <div className="mx-auto mb-2 flex max-w-lg flex-wrap gap-1.5">
                 {chips.map((hook) => (
                   <button
@@ -747,6 +816,7 @@ export default function Home() {
                 ))}
               </div>
             ) : null}
+
             <form
               className={cn("mx-auto flex items-end gap-2", chatMaxWidth)}
               onSubmit={(e) => {
@@ -765,11 +835,16 @@ export default function Home() {
                 }}
                 rows={2}
                 placeholder={
-                  discussActive
-                    ? "Keep discussing — notes update beside the chat…"
+                  hasNotes
+                    ? "Keep chatting — notes update even if minimized…"
                     : "Ask a consult question…"
                 }
-                className="min-h-[44px] flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
+                className={cn(
+                  "min-h-[44px] flex-1 resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
+                  hasNotes
+                    ? "border-amber-200 dark:border-amber-900"
+                    : "border-zinc-200 dark:border-zinc-700",
+                )}
               />
               <Button
                 type="submit"
@@ -791,21 +866,38 @@ export default function Home() {
                 <p className="text-xs text-zinc-500">
                   {sideKind === "brief"
                     ? "Snapshot of one answer — minimize anytime"
-                    : "Shared agreement trail — grows as you keep talking"}
+                    : "Living trail — minimize anytime; nothing is wiped"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
                 {sideKind === "notes" ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={busy || (!notes.whereWeAre && !notes.topic)}
-                    onClick={() => void onTighten()}
-                  >
-                    <Minimize2 className="h-3.5 w-3.5" />
-                    Tighten
-                  </Button>
+                  <>
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      disabled={busy || (!notes.whereWeAre && !notes.topic)}
+                      onClick={() => void onTighten()}
+                    >
+                      <Minimize2 className="h-3.5 w-3.5" />
+                      Tighten
+                    </Button>
+                    {rootedFromId ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        disabled={busy}
+                        title="Wipe and restart notes from the rooted answer"
+                        onClick={() => {
+                          const root = messages.find((m) => m.id === rootedFromId);
+                          if (root) openDiscuss(root, { restart: true });
+                        }}
+                      >
+                        Restart
+                      </Button>
+                    ) : null}
+                  </>
                 ) : null}
                 <Button
                   type="button"

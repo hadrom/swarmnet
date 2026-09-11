@@ -20,17 +20,15 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 - **Elaborate** / chip → depth model writes a structured brief in the right pane (snapshot, minimizable, persisted per answer)
 - Follow-ups stay in the left thread (no chat inside the brief)
 
-### Discuss (branch)
+### Discuss (companion notes — not a separate mode)
 
-- On any consult answer, click **Discuss** to start working notes from that answer (and open/saved brief if present)
-- Keep chatting as in consult (amber “discussing” chrome); right pane shows living notes:
-  - **Where we are** — current shared understanding
-  - **Agreed** — points you’ve locked in
-  - **Still open** — unresolved items
-  - **Trail** — short audit lines as the conversation moves
-- Soft follow-up chips stay consult-like (“What have we agreed?”, …)
-- **Tighten** cleans up the notes without changing meaning
-- **Back to consult** leaves discuss chrome (notes stay in memory until you Discuss again)
+- On any consult answer, click **Discuss** once to pin living **working notes** beside the chat
+- After that there is no “Back to consult” mode switch — same composer, same thread
+- Minimize the notes pane anytime; a sticky amber **dock** under the composer lets you reopen them
+- Notes are permanent for the tab session (sessionStorage): reopen / refresh keeps progress
+- While notes exist, every follow-up quietly updates them even if the pane is minimized
+- Soft chips stay consult-like (“What have we agreed?”, …)
+- **Tighten** cleans the memo; **Restart** (in the notes header) is the only way to wipe and reseed
 
 ## Models
 
@@ -47,8 +45,9 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 2. Notice the answer is one paragraph.
 3. Click a chip or **Elaborate** — brief opens on the right. Minimize if you want.
 4. Click **Discuss** on that answer — working notes open beside the chat.
-5. Ask a normal follow-up (or use a chip). Watch **Agreed** / **Still open** / **Trail** grow while the reply stays consult-like.
-6. Click **Tighten**, then **Back to consult** if you want consult without the notes pane.
+5. Ask a normal follow-up (or use a chip). Watch **Agreed** / **Still open** / **Trail** grow.
+6. Minimize notes — the amber dock keeps them one tap away. Progress is not wiped.
+7. Click **Tighten** to clean the memo; use **Restart** only if you truly want a fresh seed.
 
 ## Swap to on-prem later
 
