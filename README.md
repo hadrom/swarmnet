@@ -1,6 +1,6 @@
 # Two-lane LLM demo
 
-Local prototype for cofounder demos: **Consult** is the spine (compressed answers + on-demand brief). **Research** is a branch you enter via **Pressure-test** — same consult chat voice, with living sediment updating beside the thread. Gemini is a disposable stand-in for an on-prem model.
+Local prototype for cofounder demos: **Consult** is the spine (compressed answers + on-demand brief). **Discuss** is a branch you enter from any answer — same consult chat voice, with living **working notes** beside the thread as an audit trail of shared understanding. Gemini is a disposable stand-in for an on-prem model.
 
 ## Run
 
@@ -16,35 +16,39 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Consult (default)
 
-- Every turn uses `gemini-3.5-flash-lite` → one paragraph + drill chips
-- **Elaborate** / chip → `gemini-3.8-flash` writes a structured brief in the right pane (snapshot, minimizable, persisted per answer)
+- Every turn uses a lite model → one paragraph + drill chips
+- **Elaborate** / chip → depth model writes a structured brief in the right pane (snapshot, minimizable, persisted per answer)
 - Follow-ups stay in the left thread (no chat inside the brief)
 
-### Research (branch)
+### Discuss (branch)
 
-- On any consult answer, click **Pressure-test** to seed sediment from that answer (and open/saved brief if present)
-- Keep chatting as in consult (amber research chrome); right pane shows living **sediment**: claim, tensions, evidence, open questions
-- Each turn still returns a “this turn” sediment diff without changing chat voice
-- **Compact** rewrites the sediment tighter via `gemini-3.8-flash`
-- **Back to consult** leaves research chrome (sediment stays in memory until you re-seed)
+- On any consult answer, click **Discuss** to start working notes from that answer (and open/saved brief if present)
+- Keep chatting as in consult (amber “discussing” chrome); right pane shows living notes:
+  - **Where we are** — current shared understanding
+  - **Agreed** — points you’ve locked in
+  - **Still open** — unresolved items
+  - **Trail** — short audit lines as the conversation moves
+- Soft follow-up chips stay consult-like (“What have we agreed?”, …)
+- **Tighten** cleans up the notes without changing meaning
+- **Back to consult** leaves discuss chrome (notes stay in memory until you Discuss again)
 
 ## Models
 
 | Job | Model | Notes |
 |---|---|---|
-| Lite / research moves | `gemini-3.5-flash-lite` | 500 RPD on free tier |
-| Brief / compact | `gemini-3.8-flash` | 20 RPD — use sparingly in demos |
+| Lite / discuss turns | `gemini-3.5-flash-lite` | High free-tier volume |
+| Brief / tighten | `gemini-3.8-flash` | Use sparingly in demos |
 | 429 fallback | `gemma-4-31b-it` | High RPD, tight TPM |
 | Offline / errors | in-memory mock | Same JSON shapes |
 
 ## Demo script
 
 1. Click a starter (or ask an ops question).
-2. Notice the answer is one paragraph. Do **not** expand yet.
+2. Notice the answer is one paragraph.
 3. Click a chip or **Elaborate** — brief opens on the right. Minimize if you want.
-4. Click **Pressure-test** on that answer — sediment seeds and opens.
-5. Ask a normal follow-up (or use a chip like Weak spots). Watch sediment + “this turn” update while the reply stays consult-like.
-6. Click **Compact**, then **Back to consult** if you want consult without sediment.
+4. Click **Discuss** on that answer — working notes open beside the chat.
+5. Ask a normal follow-up (or use a chip). Watch **Agreed** / **Still open** / **Trail** grow while the reply stays consult-like.
+6. Click **Tighten**, then **Back to consult** if you want consult without the notes pane.
 
 ## Swap to on-prem later
 
@@ -52,8 +56,8 @@ Provider surface lives in [`lib/gemini.ts`](lib/gemini.ts):
 
 - `generateLite`
 - `generateBrief`
-- `reviseSediment`
-- `compactSediment`
+- `reviseNotes`
+- `compactNotes`
 
 Point those at your unlimited on-prem endpoint; keep the JSON contracts in [`lib/types.ts`](lib/types.ts) and the UI unchanged.
 

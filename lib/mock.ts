@@ -1,11 +1,10 @@
 import type {
   BriefResponse,
   CompactResponse,
+  DiscussResponse,
   LiteResponse,
-  ResearchResponse,
-  Sediment,
+  WorkingNotes,
 } from "@/lib/types";
-import { emptyDelta } from "@/lib/types";
 
 export function mockLite(question: string): LiteResponse {
   const short = question.slice(0, 80);
@@ -41,7 +40,7 @@ Expand the compressed answer in light of the thread so far. Focus for this brief
 
 ## What this depends on
 - Prior turns in this consult thread establish the topic and constraints
-- The lite answer is treated as the starting claim, not a standalone prompt
+- The lite answer is treated as the starting point, not a standalone prompt
 - Operators only open a brief when the short reply is not enough
 
 ## Detail
@@ -56,66 +55,63 @@ This mock brief is used when live depth models are unavailable. In production, t
   };
 }
 
-export function mockResearch(
-  move: string,
-  sediment: Sediment,
-): ResearchResponse {
-  const hasClaim = Boolean(sediment.claim);
-  const next: Sediment = hasClaim
+export function mockDiscuss(
+  message: string,
+  notes: WorkingNotes,
+): DiscussResponse {
+  const hasNotes = Boolean(notes.whereWeAre || notes.topic);
+  const next: WorkingNotes = hasNotes
     ? {
-        claim: sediment.claim,
-        tensions: unique([
-          ...sediment.tensions,
-          "Chat transcripts hide the working claim",
-        ]).slice(0, 5),
-        evidence: unique([
-          ...sediment.evidence,
-          `User move applied: ${move.slice(0, 100)}`,
-        ]).slice(0, 5),
-        openQuestions: unique([
-          ...sediment.openQuestions,
-          "What counts as 'done' for a sediment session?",
-        ]).slice(0, 5),
+        topic: notes.topic || "Open discussion",
+        whereWeAre: notes.whereWeAre,
+        agreed: unique([
+          ...notes.agreed,
+          "Keep chatting until the next step is explicit",
+        ]).slice(0, 6),
+        stillOpen: unique([
+          ...notes.stillOpen,
+          "What should we lock in before acting?",
+        ]).slice(0, 6),
+        trail: [
+          ...notes.trail,
+          `Clarified follow-up: ${message.slice(0, 80)}${message.length > 80 ? "…" : ""}`,
+        ].slice(-12),
       }
     : {
-        claim: `Provisional: ${move.slice(0, 180)}`,
-        tensions: ["Claim is still thin — needs more scrutiny"],
-        evidence: [],
-        openQuestions: [
-          "What would change this recommendation?",
-          "Who owns the decision?",
+        topic: message.slice(0, 60) || "Open discussion",
+        whereWeAre: `Provisional take on “${message.slice(0, 120)}${message.length > 120 ? "…" : ""}”.`,
+        agreed: [],
+        stillOpen: [
+          "What should we lock in before acting?",
+          "Who owns the next step?",
         ],
+        trail: ["Started notes from this discussion"],
       };
 
   return {
-    reply: hasClaim
-      ? `On “${move.slice(0, 72)}${move.length > 72 ? "…" : ""}”: keep the working claim provisional, name the weakest assumption, and only escalate if that assumption fails under the current constraints.`
-      : `Compressed take: treat “${move.slice(0, 72)}${move.length > 72 ? "…" : ""}” as a scoped decision. Ship the smallest reversible step, name an owner, and keep the claim open until the kill criterion is clear.`,
-    sediment: next,
-    delta: {
-      ...emptyDelta(),
-      strengthened: hasClaim ? [] : ["New provisional claim"],
-      newTension: hasClaim ? ["Chat transcripts hide the working claim"] : [],
-      stillOpen: next.openQuestions.slice(0, 2),
-    },
+    reply: hasNotes
+      ? `On “${message.slice(0, 72)}${message.length > 72 ? "…" : ""}”: stay with the current working picture, name anything still fuzzy, and only commit once the next step and owner are clear.`
+      : `Compressed take: treat “${message.slice(0, 72)}${message.length > 72 ? "…" : ""}” as a scoped decision. Ship the smallest reversible step, name an owner, and keep the notes open until the kill criterion is clear.`,
+    notes: next,
     hooks: [
-      { id: "weak-spots", label: "Weak spots" },
-      { id: "assumptions", label: "Key assumptions" },
-      { id: "counter-evidence", label: "Counter-evidence" },
-      { id: "decision-criteria", label: "Decision criteria" },
+      { id: "agreed", label: "What have we agreed?" },
+      { id: "open", label: "What's still open?" },
+      { id: "change", label: "What would change this?" },
+      { id: "next", label: "Suggested next step" },
     ],
   };
 }
 
-export function mockCompact(sediment: Sediment): CompactResponse {
+export function mockCompact(notes: WorkingNotes): CompactResponse {
   return {
-    sediment: {
-      claim: sediment.claim || "No claim yet.",
-      tensions: sediment.tensions.slice(0, 3),
-      evidence: sediment.evidence.slice(0, 3),
-      openQuestions: sediment.openQuestions.slice(0, 3),
+    notes: {
+      topic: notes.topic || "Open discussion",
+      whereWeAre: notes.whereWeAre || "Nothing captured yet.",
+      agreed: notes.agreed.slice(0, 4),
+      stillOpen: notes.stillOpen.slice(0, 4),
+      trail: notes.trail.slice(-8),
     },
-    note: "Mock compact: truncated lists and kept the claim intact.",
+    note: "Mock tighten: trimmed lists and kept the current understanding.",
   };
 }
 

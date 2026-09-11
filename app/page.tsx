@@ -5,9 +5,9 @@ import {
   ArrowUp,
   ChevronRight,
   FileText,
-  FlaskConical,
   Loader2,
   Maximize2,
+  MessageSquare,
   Minimize2,
   Sparkles,
   X,
@@ -19,16 +19,14 @@ import { CONSULT_STARTERS } from "@/lib/prompts";
 import type {
   Hook,
   SavedBrief,
-  Sediment,
-  SedimentDelta,
   ThreadMessage,
+  WorkingNotes,
 } from "@/lib/types";
 import {
+  DISCUSS_CHIPS,
   FULL_BRIEF_KEY,
-  RESEARCH_MOVES,
-  emptyDelta,
-  emptySediment,
-  seedSedimentFromAnswer,
+  emptyNotes,
+  seedNotesFromAnswer,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
@@ -72,25 +70,24 @@ function SimpleMarkdown({ text }: { text: string }) {
   );
 }
 
-function SedimentView({
-  sediment,
-  delta,
-  note,
+function NotesView({
+  notes,
+  tip,
 }: {
-  sediment: Sediment;
-  delta: SedimentDelta | null;
-  note?: string | null;
+  notes: WorkingNotes;
+  tip?: string | null;
 }) {
-  const empty = !sediment.claim && sediment.tensions.length === 0;
+  const empty =
+    !notes.whereWeAre && notes.agreed.length === 0 && !notes.topic;
   if (empty) {
     return (
       <div className="flex h-full flex-col justify-center gap-2 text-sm text-zinc-500">
         <p className="font-medium text-zinc-700 dark:text-zinc-200">
-          Sediment is empty
+          No notes yet
         </p>
         <p>
-          Pressure-test an answer to seed a working claim here. Keep asking
-          as usual — this memo updates in the background.
+          Click Discuss on an answer to start a shared memo here. Keep chatting
+          as usual — this side grows as an audit trail of what you lock in.
         </p>
       </div>
     );
@@ -121,49 +118,61 @@ function SedimentView({
 
   return (
     <div className="space-y-5">
-      <div className="space-y-1.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Working claim
-        </h3>
-        <p className="text-sm font-medium leading-relaxed text-zinc-900 dark:text-zinc-50">
-          {sediment.claim || "—"}
-        </p>
-      </div>
-      <Section title="Tensions" items={sediment.tensions} />
-      <Section title="Evidence" items={sediment.evidence} />
-      <Section title="Open questions" items={sediment.openQuestions} />
-
-      {delta ? (
-        <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
-          <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
-            This turn
+      {notes.topic ? (
+        <div className="space-y-1">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Topic
           </h3>
-          <div className="space-y-2 text-xs text-amber-950 dark:text-amber-100">
-            <DeltaLine label="Strengthened" items={delta.strengthened} />
-            <DeltaLine label="Weakened" items={delta.weakened} />
-            <DeltaLine label="New tension" items={delta.newTension} />
-            <DeltaLine label="Still open" items={delta.stillOpen} />
-          </div>
+          <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
+            {notes.topic}
+          </p>
         </div>
       ) : null}
 
-      {note ? <p className="text-xs italic text-zinc-500">{note}</p> : null}
-    </div>
-  );
-}
+      <div className="space-y-1.5">
+        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+          Where we are
+        </h3>
+        <p className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-100">
+          {notes.whereWeAre || "—"}
+        </p>
+      </div>
 
-function DeltaLine({ label, items }: { label: string; items: string[] }) {
-  if (!items.length) return null;
-  return (
-    <div>
-      <span className="font-semibold">{label}: </span>
-      {items.join(" · ")}
+      <Section title="Agreed" items={notes.agreed} />
+      <Section title="Still open" items={notes.stillOpen} />
+
+      {notes.trail.length > 0 ? (
+        <div className="space-y-1.5">
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            Trail
+          </h3>
+          <ol className="space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
+            {notes.trail.map((entry, i) => (
+              <li
+                key={`${i}-${entry.slice(0, 24)}`}
+                className={cn(
+                  "flex gap-2 rounded-lg px-2 py-1.5",
+                  i === notes.trail.length - 1 &&
+                    "bg-amber-50/80 dark:bg-amber-950/30",
+                )}
+              >
+                <span className="shrink-0 text-xs text-zinc-400">
+                  {i + 1}.
+                </span>
+                <span>{entry}</span>
+              </li>
+            ))}
+          </ol>
+        </div>
+      ) : null}
+
+      {tip ? <p className="text-xs italic text-zinc-500">{tip}</p> : null}
     </div>
   );
 }
 
 type OpenBriefRef = { messageId: string; key: string };
-type SideKind = "brief" | "sediment";
+type SideKind = "brief" | "notes";
 
 export default function Home() {
   const [input, setInput] = useState("");
@@ -173,14 +182,13 @@ export default function Home() {
   const [modelHint, setModelHint] = useState<string | null>(null);
 
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
-  const [researchActive, setResearchActive] = useState(false);
+  const [discussActive, setDiscussActive] = useState(false);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
   const [promotedFromId, setPromotedFromId] = useState<string | null>(null);
-  const [moveHooks, setMoveHooks] = useState<Hook[]>(RESEARCH_MOVES);
+  const [chips, setChips] = useState<Hook[]>(DISCUSS_CHIPS);
 
-  const [sediment, setSediment] = useState<Sediment>(() => emptySediment());
-  const [delta, setDelta] = useState<SedimentDelta | null>(null);
-  const [compactNote, setCompactNote] = useState<string | null>(null);
+  const [notes, setNotes] = useState<WorkingNotes>(() => emptyNotes());
+  const [tightenTip, setTightenTip] = useState<string | null>(null);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
@@ -198,36 +206,36 @@ export default function Home() {
 
   const showSidePane =
     (sideKind === "brief" && activeBrief !== null) ||
-    (sideKind === "sediment" && researchActive);
+    (sideKind === "notes" && discussActive);
 
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
   const paneTitle =
     sideKind === "brief" && activeBrief
       ? `Brief · ${activeBrief.brief.title}`
-      : "Sediment";
+      : notes.topic
+        ? `Notes · ${notes.topic}`
+        : "Working notes";
 
   function minimizeSide() {
     if (sideKind === "brief") {
       setOpenBrief(null);
-      setSideKind(researchActive ? "sediment" : null);
+      setSideKind(discussActive ? "notes" : null);
       return;
     }
-    // Minimize sediment → back to clean consult chat; sediment kept in memory
     setSideKind(null);
   }
 
-  function resumeSediment() {
+  function resumeNotes() {
     setOpenBrief(null);
-    setSideKind("sediment");
-    setResearchActive(true);
+    setSideKind("notes");
+    setDiscussActive(true);
   }
 
-  function exitResearch() {
-    setResearchActive(false);
+  function exitDiscuss() {
+    setDiscussActive(false);
     setSideKind(null);
-    setDelta(null);
-    setMoveHooks(RESEARCH_MOVES);
+    setChips(DISCUSS_CHIPS);
   }
 
   function openSavedBrief(messageId: string, key: string) {
@@ -251,31 +259,26 @@ export default function Home() {
     setSideKind("brief");
   }
 
-  function pressureTest(msg: ThreadMessage) {
+  function startDiscuss(msg: ThreadMessage) {
     const preferredKey =
       (openBrief?.messageId === msg.id ? openBrief.key : null) ??
       (msg.briefs?.[FULL_BRIEF_KEY] ? FULL_BRIEF_KEY : null) ??
       Object.keys(msg.briefs ?? {})[0] ??
       null;
     const brief = preferredKey ? msg.briefs?.[preferredKey] : null;
-    const seeded = seedSedimentFromAnswer(msg.content, brief ?? null);
+    const seeded = seedNotesFromAnswer(msg.content, brief ?? null);
 
-    setSediment(seeded);
-    setDelta({
-      ...emptyDelta(),
-      strengthened: ["Provisional claim seeded from consult"],
-      stillOpen: seeded.openQuestions.slice(0, 2),
-    });
-    setCompactNote(null);
+    setNotes(seeded);
+    setTightenTip(null);
     setPromotedFromId(msg.id);
     setMessages((prev) =>
       prev.map((m) => (m.id === msg.id ? { ...m, promoted: true } : m)),
     );
     setOpenBrief(null);
-    setResearchActive(true);
-    setSideKind("sediment");
-    setMoveHooks(RESEARCH_MOVES);
-    setModelHint("sediment seeded · local");
+    setDiscussActive(true);
+    setSideKind("notes");
+    setChips(DISCUSS_CHIPS);
+    setModelHint("notes started · local");
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -300,10 +303,10 @@ export default function Home() {
     };
   }
 
-  async function sendResearch(
-    move: string,
+  async function sendDiscuss(
+    message: string,
     prior: ThreadMessage[],
-    sed: Sediment,
+    current: WorkingNotes,
   ) {
     const history = prior.map((m) => ({
       role: m.role,
@@ -312,17 +315,16 @@ export default function Home() {
     const res = await fetch("/api/research", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ move, sediment: sed, history }),
+      body: JSON.stringify({ message, notes: current, history }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Research request failed");
+    if (!res.ok) throw new Error(data.error || "Discuss request failed");
     setModelHint(
       data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.5-flash-lite",
     );
     return data as {
       reply: string;
-      sediment: Sediment;
-      delta: SedimentDelta;
+      notes: WorkingNotes;
       hooks: Hook[];
     };
   }
@@ -341,15 +343,13 @@ export default function Home() {
     setMessages(nextThread);
     setBusy(true);
     try {
-      if (researchActive) {
-        // Same consult chat; sediment updates in parallel
-        setSideKind("sediment");
+      if (discussActive) {
+        setSideKind("notes");
         setOpenBrief(null);
-        const data = await sendResearch(question, messages, sediment);
-        setSediment(data.sediment);
-        setDelta(data.delta ?? emptyDelta());
-        setCompactNote(null);
-        if (data.hooks?.length) setMoveHooks(data.hooks);
+        const data = await sendDiscuss(question, messages, notes);
+        setNotes(data.notes);
+        setTightenTip(null);
+        if (data.hooks?.length) setChips(data.hooks);
         setMessages([
           ...nextThread,
           {
@@ -427,35 +427,33 @@ export default function Home() {
     }
   }
 
-  async function onCompact() {
-    if (busy || !sediment.claim) return;
+  async function onTighten() {
+    if (busy || (!notes.whereWeAre && !notes.topic)) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/compact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ sediment }),
+        body: JSON.stringify({ notes }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Compact failed");
-      setSediment(data.sediment);
-      setDelta(null);
-      setCompactNote(data.note);
-      setSideKind("sediment");
+      if (!res.ok) throw new Error(data.error || "Tighten failed");
+      setNotes(data.notes);
+      setTightenTip(data.note);
+      setSideKind("notes");
       setModelHint(
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Compact failed");
+      setError(err instanceof Error ? err.message : "Tighten failed");
     } finally {
       setBusy(false);
     }
   }
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
-    if (researchActive && !msg.confidence) {
-      // Research replies: chips are follow-up prompts (same as typing)
+    if (discussActive && !msg.confidence) {
       void onSubmit(hook.label);
       return;
     }
@@ -472,40 +470,40 @@ export default function Home() {
               <h1 className="truncate text-sm font-semibold tracking-tight">
                 Two-lane LLM demo
               </h1>
-              {researchActive ? (
+              {discussActive ? (
                 <Badge className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-                  research branch
+                  discussing
                 </Badge>
               ) : null}
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
-              Consult is the spine. Elaborate opens a brief. Pressure-test
-              keeps the same chat voice while sediment builds beside it.
+              Consult is the spine. Elaborate opens a brief. Discuss keeps the
+              same chat voice while working notes build beside it.
             </p>
           </div>
           <div className="flex items-center gap-2">
             {modelHint ? (
               <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
             ) : null}
-            {researchActive ? (
+            {discussActive ? (
               <>
-                {sideKind !== "sediment" ? (
+                {sideKind !== "notes" ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    onClick={resumeSediment}
+                    onClick={resumeNotes}
                   >
-                    <FlaskConical className="h-3.5 w-3.5" />
-                    Sediment
+                    <MessageSquare className="h-3.5 w-3.5" />
+                    Notes
                   </Button>
                 ) : null}
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={exitResearch}
-                  title="Return to consult without sediment"
+                  onClick={exitDiscuss}
+                  title="Leave discuss mode"
                 >
                   Back to consult
                 </Button>
@@ -526,7 +524,8 @@ export default function Home() {
         <section
           className={cn(
             "flex min-h-0 flex-col overflow-hidden",
-            showSidePane && "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
+            showSidePane &&
+              "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
           )}
         >
           <ScrollArea className="min-h-0 flex-1 px-4 py-4">
@@ -539,8 +538,8 @@ export default function Home() {
                     Ask something operational
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    Answers stay short. Elaborate for a brief. Pressure-test
-                    when you want a living working claim beside the chat.
+                    Answers stay short. Elaborate for a brief. Discuss when you
+                    want a living agreement trail beside the chat.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -561,8 +560,7 @@ export default function Home() {
                 {messages.map((msg) => {
                   const savedEntries = Object.entries(msg.briefs ?? {});
                   const isBriefSource =
-                    sideKind === "brief" &&
-                    openBrief?.messageId === msg.id;
+                    sideKind === "brief" && openBrief?.messageId === msg.id;
                   const isPromotedSource = promotedFromId === msg.id;
                   const isConsultAnswer =
                     msg.role === "assistant" && msg.confidence != null;
@@ -584,7 +582,7 @@ export default function Home() {
                           isBriefSource &&
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
                           isPromotedSource &&
-                            researchActive &&
+                            discussActive &&
                             "ring-2 ring-amber-500/70",
                         )}
                       >
@@ -600,10 +598,10 @@ export default function Home() {
 
                             {(isConsultAnswer
                               ? msg.hooks
-                              : researchActive
+                              : discussActive
                                 ? msg.hooks?.length
                                   ? msg.hooks
-                                  : moveHooks
+                                  : chips
                                 : msg.hooks
                             )?.map((hook) => {
                               const saved = msg.briefs?.[hook.id];
@@ -675,19 +673,17 @@ export default function Home() {
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => pressureTest(msg)}
+                                  onClick={() => startDiscuss(msg)}
                                   className={cn(
                                     "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                                     msg.promoted
                                       ? "border-amber-600 bg-amber-600 text-white"
                                       : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70",
                                   )}
-                                  title="Keep chatting as usual while a living claim builds in sediment"
+                                  title="Keep chatting as usual while a shared agreement trail builds beside the chat"
                                 >
-                                  <FlaskConical className="h-3 w-3" />
-                                  {msg.promoted
-                                    ? "Re-seed research"
-                                    : "Pressure-test"}
+                                  <MessageSquare className="h-3 w-3" />
+                                  {msg.promoted ? "Discuss from here" : "Discuss"}
                                 </button>
                               </>
                             ) : null}
@@ -736,9 +732,9 @@ export default function Home() {
                 {error}
               </p>
             ) : null}
-            {researchActive ? (
+            {discussActive ? (
               <div className="mx-auto mb-2 flex max-w-lg flex-wrap gap-1.5">
-                {moveHooks.map((hook) => (
+                {chips.map((hook) => (
                   <button
                     key={hook.id}
                     type="button"
@@ -769,8 +765,8 @@ export default function Home() {
                 }}
                 rows={2}
                 placeholder={
-                  researchActive
-                    ? "Ask a follow-up — sediment updates beside the chat…"
+                  discussActive
+                    ? "Keep discussing — notes update beside the chat…"
                     : "Ask a consult question…"
                 }
                 className="min-h-[44px] flex-1 resize-none rounded-xl border border-zinc-200 bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:border-zinc-700 dark:bg-zinc-900"
@@ -795,20 +791,20 @@ export default function Home() {
                 <p className="text-xs text-zinc-500">
                   {sideKind === "brief"
                     ? "Snapshot of one answer — minimize anytime"
-                    : "Living memo updated as you keep asking"}
+                    : "Shared agreement trail — grows as you keep talking"}
                 </p>
               </div>
               <div className="flex shrink-0 items-center gap-1.5">
-                {sideKind === "sediment" ? (
+                {sideKind === "notes" ? (
                   <Button
                     type="button"
                     variant="outline"
                     size="sm"
-                    disabled={busy || !sediment.claim}
-                    onClick={() => void onCompact()}
+                    disabled={busy || (!notes.whereWeAre && !notes.topic)}
+                    onClick={() => void onTighten()}
                   >
                     <Minimize2 className="h-3.5 w-3.5" />
-                    Compact
+                    Tighten
                   </Button>
                 ) : null}
                 <Button
@@ -826,12 +822,8 @@ export default function Home() {
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
               {sideKind === "brief" && activeBrief ? (
                 <SimpleMarkdown text={activeBrief.brief.markdown} />
-              ) : sideKind === "sediment" ? (
-                <SedimentView
-                  sediment={sediment}
-                  delta={delta}
-                  note={compactNote}
-                />
+              ) : sideKind === "notes" ? (
+                <NotesView notes={notes} tip={tightenTip} />
               ) : null}
             </ScrollArea>
           </section>

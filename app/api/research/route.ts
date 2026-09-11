@@ -1,22 +1,22 @@
 import { NextResponse } from "next/server";
-import { reviseSediment } from "@/lib/gemini";
-import { emptySediment } from "@/lib/types";
+import { reviseNotes } from "@/lib/gemini";
+import { emptyNotes } from "@/lib/types";
 
 export async function POST(req: Request) {
   try {
     const body = await req.json();
-    const move = String(body.move ?? "").trim();
-    if (!move) {
-      return NextResponse.json({ error: "move required" }, { status: 400 });
+    const message = String(body.message ?? body.move ?? "").trim();
+    if (!message) {
+      return NextResponse.json({ error: "message required" }, { status: 400 });
     }
-    const sediment = body.sediment ?? emptySediment();
+    const notes = body.notes ?? body.sediment ?? emptyNotes();
     const history = Array.isArray(body.history) ? body.history : [];
-    const result = await reviseSediment({ move, sediment, history });
+    const result = await reviseNotes({ message, notes, history });
     return NextResponse.json(result);
   } catch (err) {
     console.error(err);
     return NextResponse.json(
-      { error: err instanceof Error ? err.message : "research failed" },
+      { error: err instanceof Error ? err.message : "discuss failed" },
       { status: 500 },
     );
   }

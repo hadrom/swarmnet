@@ -8,17 +8,17 @@ import {
 import {
   mockBrief,
   mockCompact,
+  mockDiscuss,
   mockLite,
-  mockResearch,
 } from "@/lib/mock";
 import type {
   BriefResponse,
   CompactResponse,
+  DiscussResponse,
   LiteResponse,
-  ResearchResponse,
-  Sediment,
-  SedimentDelta,
+  WorkingNotes,
 } from "@/lib/types";
+import { emptyNotes } from "@/lib/types";
 
 const LITE_MODEL = "gemini-3.5-flash-lite";
 const DEPTH_MODEL = "gemini-3.8-flash";
@@ -56,7 +56,6 @@ function responseText(response: {
     .join("");
   if (visible) return visible;
   if (response.text) return response.text;
-  // Last resort: include non-empty parts even if marked thought
   return parts.map((p) => p.text ?? "").join("");
 }
 
@@ -96,23 +95,14 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
   };
 }
 
-function normalizeSediment(raw: unknown): Sediment {
+function normalizeNotes(raw: unknown): WorkingNotes {
   const s = (raw ?? {}) as Record<string, unknown>;
   return {
-    claim: String(s.claim ?? ""),
-    tensions: asStringList(s.tensions),
-    evidence: asStringList(s.evidence),
-    openQuestions: asStringList(s.openQuestions),
-  };
-}
-
-function normalizeDelta(raw: unknown): SedimentDelta {
-  const d = (raw ?? {}) as Record<string, unknown>;
-  return {
-    strengthened: asStringList(d.strengthened),
-    weakened: asStringList(d.weakened),
-    newTension: asStringList(d.newTension),
-    stillOpen: asStringList(d.stillOpen),
+    topic: String(s.topic ?? ""),
+    whereWeAre: String(s.whereWeAre ?? s.where_we_are ?? ""),
+    agreed: asStringList(s.agreed),
+    stillOpen: asStringList(s.stillOpen ?? s.still_open),
+    trail: asStringList(s.trail),
   };
 }
 
@@ -133,7 +123,6 @@ async function generateJson<T>(
   const tryModel = async (modelId: string) => {
     const isGemma = modelId.startsWith("gemma-");
     const isLite = modelId.includes("flash-lite");
-    // Depth calls request HIGH thinking; lite fallbacks must not inherit that.
     const thinking = isLite
       ? ThinkingLevel.MINIMAL
       : isGemma
@@ -237,20 +226,12 @@ export async function generateBrief(input: {
         thinking: ThinkingLevel.HIGH,
         maxOutputTokens: 1200,
         allowFallback: true,
-        fallbackModels: [
-          DEPTH_FALLBACK_MODEL,
-          LITE_MODEL,
-          FALLBACK_MODEL,
-        ],
+        fallbackModels: [DEPTH_FALLBACK_MODEL, LITE_MODEL, FALLBACK_MODEL],
       },
     );
     const markdown = String(data.markdown ?? "").trim();
     if (!markdown) throw new Error("Empty model response");
-    return {
-      markdown,
-      modelUsed,
-      mocked: false,
-    };
+    return { markdown, modelUsed, mocked: false };
   } catch (err) {
     console.error("brief failed, using mock:", err);
     return {
@@ -261,16 +242,16 @@ export async function generateBrief(input: {
   }
 }
 
-export async function reviseSediment(input: {
-  move: string;
-  sediment: Sediment;
+export async function reviseNotes(input: {
+  message: string;
+  notes: WorkingNotes;
   history: { role: string; content: string }[];
-}): Promise<ResearchResponse & { modelUsed: string; mocked: boolean }> {
+}): Promise<DiscussResponse & { modelUsed: string; mocked: boolean }> {
   const historyBlock = input.history
     .slice(-8)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Current sediment JSON (update quietly; do not narrate it in reply):\n${JSON.stringify(input.sediment)}\n\nRecent conversation:\n${historyBlock || "(none)"}\n\nUser message:\n${input.move}`;
+  const user = `Current working notes JSON (update quietly; do not narrate them in reply):\n${JSON.stringify(input.notes)}\n\nRecent conversation:\n${historyBlock || "(none)"}\n\nUser message:\n${input.message}`;
 
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(
@@ -281,26 +262,25 @@ export async function reviseSediment(input: {
     );
     return {
       reply: String(data.reply ?? ""),
-      sediment: normalizeSediment(data.sediment),
-      delta: normalizeDelta(data.delta),
+      notes: normalizeNotes(data.notes),
       hooks: normalizeHooks(data.hooks),
       modelUsed,
       mocked: false,
     };
   } catch (err) {
-    console.error("research failed, using mock:", err);
+    console.error("discuss failed, using mock:", err);
     return {
-      ...mockResearch(input.move, input.sediment),
+      ...mockDiscuss(input.message, input.notes),
       modelUsed: "mock",
       mocked: true,
     };
   }
 }
 
-export async function compactSediment(input: {
-  sediment: Sediment;
+export async function compactNotes(input: {
+  notes: WorkingNotes;
 }): Promise<CompactResponse & { modelUsed: string; mocked: boolean }> {
-  const user = `Sediment to compact:\n${JSON.stringify(input.sediment)}`;
+  const user = `Working notes to tighten:\n${JSON.stringify(input.notes)}`;
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(
       DEPTH_MODEL,
@@ -310,25 +290,50 @@ export async function compactSediment(input: {
         thinking: ThinkingLevel.HIGH,
         maxOutputTokens: 900,
         allowFallback: true,
-        fallbackModels: [
-          DEPTH_FALLBACK_MODEL,
-          LITE_MODEL,
-          FALLBACK_MODEL,
-        ],
+        fallbackModels: [DEPTH_FALLBACK_MODEL, LITE_MODEL, FALLBACK_MODEL],
       },
     );
     return {
-      sediment: normalizeSediment(data.sediment),
-      note: String(data.note ?? "Compacted."),
+      notes: normalizeNotes(data.notes),
+      note: String(data.note ?? "Tightened."),
       modelUsed,
       mocked: false,
     };
   } catch (err) {
     console.error("compact failed, using mock:", err);
     return {
-      ...mockCompact(input.sediment),
+      ...mockCompact(input.notes ?? emptyNotes()),
       modelUsed: "mock",
       mocked: true,
     };
   }
 }
+
+/** @deprecated Prefer reviseNotes */
+export const reviseSediment = async (input: {
+  move: string;
+  sediment: WorkingNotes;
+  history: { role: string; content: string }[];
+}) => {
+  const result = await reviseNotes({
+    message: input.move,
+    notes: input.sediment,
+    history: input.history,
+  });
+  return {
+    ...result,
+    sediment: result.notes,
+    delta: {
+      strengthened: [],
+      weakened: [],
+      newTension: [],
+      stillOpen: result.notes.stillOpen.slice(0, 2),
+    },
+  };
+};
+
+/** @deprecated Prefer compactNotes */
+export const compactSediment = async (input: { sediment: WorkingNotes }) => {
+  const result = await compactNotes({ notes: input.sediment });
+  return { ...result, sediment: result.notes };
+};

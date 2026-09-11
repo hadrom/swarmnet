@@ -13,29 +13,31 @@ export type BriefResponse = {
   markdown: string;
 };
 
-export type Sediment = {
-  claim: string;
-  tensions: string[];
-  evidence: string[];
-  openQuestions: string[];
-};
-
-export type SedimentDelta = {
-  strengthened: string[];
-  weakened: string[];
-  newTension: string[];
+/**
+ * Living side memo for Discuss mode: shared understanding + audit trail.
+ * Not a peer-review / debate scorecard.
+ */
+export type WorkingNotes = {
+  /** Short label for the rabbit hole. */
+  topic: string;
+  /** Plain-language snapshot of where things stand right now. */
+  whereWeAre: string;
+  /** Points both sides have treated as settled in this thread. */
+  agreed: string[];
+  /** Unresolved items still worth chasing. */
   stillOpen: string[];
+  /** Chronological audit trail (oldest → newest), one short line per turn. */
+  trail: string[];
 };
 
-export type ResearchResponse = {
+export type DiscussResponse = {
   reply: string;
-  sediment: Sediment;
-  delta: SedimentDelta;
+  notes: WorkingNotes;
   hooks: Hook[];
 };
 
 export type CompactResponse = {
-  sediment: Sediment;
+  notes: WorkingNotes;
   note: string;
 };
 
@@ -56,34 +58,27 @@ export type ThreadMessage = {
   hooks?: Hook[];
   /** Saved elaborations for this answer. Key is hook id, or "full". */
   briefs?: Record<string, SavedBrief>;
-  /** True once this answer was promoted into sediment. */
+  /** True once this answer opened a Discuss notes pane. */
   promoted?: boolean;
 };
 
 export const FULL_BRIEF_KEY = "full";
 
-export const RESEARCH_MOVES: Hook[] = [
-  { id: "weak-spots", label: "Weak spots" },
-  { id: "assumptions", label: "Key assumptions" },
-  { id: "counter-evidence", label: "Counter-evidence" },
-  { id: "decision-criteria", label: "Decision criteria" },
+/** Soft follow-up chips while discussing — same style as consult, not debate moves. */
+export const DISCUSS_CHIPS: Hook[] = [
+  { id: "agreed", label: "What have we agreed?" },
+  { id: "open", label: "What's still open?" },
+  { id: "change", label: "What would change this?" },
+  { id: "next", label: "Suggested next step" },
 ];
 
-export function emptySediment(): Sediment {
+export function emptyNotes(): WorkingNotes {
   return {
-    claim: "",
-    tensions: [],
-    evidence: [],
-    openQuestions: [],
-  };
-}
-
-export function emptyDelta(): SedimentDelta {
-  return {
-    strengthened: [],
-    weakened: [],
-    newTension: [],
+    topic: "",
+    whereWeAre: "",
+    agreed: [],
     stillOpen: [],
+    trail: [],
   };
 }
 
@@ -102,13 +97,13 @@ export function sectionFromBrief(
   return (match?.[1] ?? "").trim();
 }
 
-export function seedSedimentFromAnswer(
+export function seedNotesFromAnswer(
   answer: string,
   brief?: SavedBrief | null,
-): Sediment {
+): WorkingNotes {
   const bottom = sectionFromBrief(brief?.markdown, "Bottom line");
   const unknowns = sectionFromBrief(brief?.markdown, "Unknowns");
-  const openQuestions = unknowns
+  const stillOpen = unknowns
     .split("\n")
     .map((line) => line.replace(/^[-*•]\s+/, "").trim())
     .filter(
@@ -119,19 +114,22 @@ export function seedSedimentFromAnswer(
     )
     .slice(0, 5);
 
-  const claim = (bottom || answer).replace(/\s+/g, " ").trim();
+  const whereWeAre = (bottom || answer).replace(/\s+/g, " ").trim().slice(0, 600);
+  const topic =
+    whereWeAre.split(/[.!?]/)[0]?.trim().slice(0, 80) || "Open discussion";
 
   return {
-    claim: claim.slice(0, 600),
-    tensions: [
-      "Provisional claim — still needs scrutiny before treating as decided",
+    topic,
+    whereWeAre,
+    agreed: [],
+    stillOpen:
+      stillOpen.length > 0
+        ? stillOpen
+        : ["Anything we should lock in before acting?"],
+    trail: [
+      brief
+        ? `Started notes from consult + brief “${brief.title}”`
+        : "Started notes from consult answer",
     ],
-    evidence: brief
-      ? [`Seeded from brief “${brief.title}” on the consult answer`]
-      : [`Seeded from compressed consult answer`],
-    openQuestions:
-      openQuestions.length > 0
-        ? openQuestions
-        : ["What would change this recommendation?"],
   };
 }
