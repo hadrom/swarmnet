@@ -1,7 +1,16 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
-import { ArrowUp, Loader2, Maximize2, Minimize2, Sparkles } from "lucide-react";
+import {
+  ArrowUp,
+  ChevronRight,
+  FileText,
+  Loader2,
+  Maximize2,
+  Minimize2,
+  Sparkles,
+  X,
+} from "lucide-react";
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
@@ -9,15 +18,20 @@ import { CONSULT_STARTERS, RESEARCH_STARTERS } from "@/lib/prompts";
 import type {
   Hook,
   Mode,
+  SavedBrief,
   Sediment,
   SedimentDelta,
   ThreadMessage,
 } from "@/lib/types";
-import { emptyDelta, emptySediment } from "@/lib/types";
+import { FULL_BRIEF_KEY, emptyDelta, emptySediment } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 function uid() {
   return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+}
+
+function briefKeyFor(hook?: Hook) {
+  return hook?.id ?? FULL_BRIEF_KEY;
 }
 
 function SimpleMarkdown({ text }: { text: string }) {
@@ -70,7 +84,7 @@ function SedimentView({
         </p>
         <p>
           Make a move on the left. The working claim, tensions, and open
-          questions will accumulate here — not in the chat transcript.
+          questions accumulate here — not in the chat transcript.
         </p>
       </div>
     );
@@ -113,7 +127,7 @@ function SedimentView({
       <Section title="Evidence" items={sediment.evidence} />
       <Section title="Open questions" items={sediment.openQuestions} />
 
-      {delta && (
+      {delta ? (
         <div className="rounded-xl border border-amber-200/80 bg-amber-50/70 p-3 dark:border-amber-900/50 dark:bg-amber-950/30">
           <h3 className="mb-2 text-xs font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
             This turn
@@ -125,11 +139,9 @@ function SedimentView({
             <DeltaLine label="Still open" items={delta.stillOpen} />
           </div>
         </div>
-      )}
-
-      {note ? (
-        <p className="text-xs italic text-zinc-500">{note}</p>
       ) : null}
+
+      {note ? <p className="text-xs italic text-zinc-500">{note}</p> : null}
     </div>
   );
 }
@@ -144,6 +156,11 @@ function DeltaLine({ label, items }: { label: string; items: string[] }) {
   );
 }
 
+type OpenBriefRef = {
+  messageId: string;
+  key: string;
+};
+
 export default function Home() {
   const [mode, setMode] = useState<Mode>("consult");
   const [input, setInput] = useState("");
@@ -152,12 +169,10 @@ export default function Home() {
   const [error, setError] = useState<string | null>(null);
   const [modelHint, setModelHint] = useState<string | null>(null);
 
-  // Consult right pane
-  const [brief, setBrief] = useState<string | null>(null);
-  const [briefTitle, setBriefTitle] = useState<string | null>(null);
+  /** Currently expanded brief in Consult; null = minimized / clean chat. */
+  const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
 
-  // Research right pane
-  const [sediment, setSediment] = useState<Sediment>(emptySediment);
+  const [sediment, setSediment] = useState<Sediment>(() => emptySediment());
   const [delta, setDelta] = useState<SedimentDelta | null>(null);
   const [compactNote, setCompactNote] = useState<string | null>(null);
 
@@ -169,6 +184,25 @@ export default function Home() {
 
   const starters = mode === "consult" ? CONSULT_STARTERS : RESEARCH_STARTERS;
 
+  const activeBrief = useMemo(() => {
+    if (!openBrief) return null;
+    const msg = messages.find((m) => m.id === openBrief.messageId);
+    const brief = msg?.briefs?.[openBrief.key];
+    if (!msg || !brief) return null;
+    return { message: msg, brief, key: openBrief.key };
+  }, [openBrief, messages]);
+
+  const briefPaneOpen = mode === "consult" && activeBrief !== null;
+  const showSidePane = mode === "research" || briefPaneOpen;
+  const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
+
+  const paneTitle =
+    mode === "consult"
+      ? activeBrief
+        ? `Brief · ${activeBrief.brief.title}`
+        : "Brief"
+      : "Sediment";
+
   function switchMode(next: Mode) {
     if (next === mode) return;
     setMode(next);
@@ -176,11 +210,33 @@ export default function Home() {
     setInput("");
     setError(null);
     setModelHint(null);
-    setBrief(null);
-    setBriefTitle(null);
+    setOpenBrief(null);
     setSediment(emptySediment());
     setDelta(null);
     setCompactNote(null);
+  }
+
+  function minimizeBrief() {
+    setOpenBrief(null);
+  }
+
+  function openSavedBrief(messageId: string, key: string) {
+    setOpenBrief({ messageId, key });
+  }
+
+  function saveBriefOnMessage(
+    messageId: string,
+    key: string,
+    brief: SavedBrief,
+  ) {
+    setMessages((prev) =>
+      prev.map((m) =>
+        m.id === messageId
+          ? { ...m, briefs: { ...(m.briefs ?? {}), [key]: brief } }
+          : m,
+      ),
+    );
+    setOpenBrief({ messageId, key });
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -205,7 +261,11 @@ export default function Home() {
     };
   }
 
-  async function sendResearch(move: string, prior: ThreadMessage[], sed: Sediment) {
+  async function sendResearch(
+    move: string,
+    prior: ThreadMessage[],
+    sed: Sediment,
+  ) {
     const history = prior.map((m) => ({
       role: m.role,
       content: m.content,
@@ -252,6 +312,7 @@ export default function Home() {
             content: data.answer,
             confidence: data.confidence,
             hooks: data.hooks,
+            briefs: {},
           },
         ]);
       } else {
@@ -278,10 +339,16 @@ export default function Home() {
 
   async function onElaborate(msg: ThreadMessage, hook?: Hook) {
     if (busy) return;
+    const key = briefKeyFor(hook);
+    const existing = msg.briefs?.[key];
+    if (existing) {
+      openSavedBrief(msg.id, key);
+      return;
+    }
+
     setBusy(true);
     setError(null);
     try {
-      // Find the nearest preceding user question
       const idx = messages.findIndex((m) => m.id === msg.id);
       const priorUser = [...messages]
         .slice(0, idx)
@@ -299,8 +366,11 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brief failed");
-      setBrief(data.markdown);
-      setBriefTitle(hook?.label ?? "Elaborate");
+      saveBriefOnMessage(msg.id, key, {
+        title: hook?.label ?? "Elaborate",
+        markdown: data.markdown,
+        hookId: hook?.id,
+      });
       setModelHint(
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
@@ -343,11 +413,6 @@ export default function Home() {
       void onSubmit(hook.label);
     }
   }
-
-  const paneTitle = useMemo(() => {
-    if (mode === "consult") return briefTitle ? `Brief · ${briefTitle}` : "Brief";
-    return "Sediment";
-  }, [mode, briefTitle]);
 
   return (
     <div className="flex min-h-screen flex-col bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
@@ -399,12 +464,21 @@ export default function Home() {
         </div>
       </header>
 
-      <main className="mx-auto grid w-full max-w-7xl flex-1 grid-cols-1 gap-0 lg:grid-cols-2">
-        {/* Left: thread */}
-        <section className="flex min-h-[60vh] flex-col border-r border-zinc-200 dark:border-zinc-800">
+      <main
+        className={cn(
+          "mx-auto grid w-full max-w-7xl flex-1 gap-0",
+          showSidePane ? "grid-cols-1 lg:grid-cols-2" : "grid-cols-1",
+        )}
+      >
+        <section
+          className={cn(
+            "flex min-h-[60vh] flex-col",
+            showSidePane && "border-r border-zinc-200 dark:border-zinc-800",
+          )}
+        >
           <ScrollArea className="flex-1 px-4 py-4">
             {messages.length === 0 ? (
-              <div className="mx-auto flex max-w-lg flex-col gap-4 pt-10">
+              <div className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}>
                 <div>
                   <h2 className="text-base font-semibold">
                     {mode === "consult"
@@ -413,7 +487,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     {mode === "consult"
-                      ? "Answers stay to one paragraph. Click a chip or Elaborate when you want depth."
+                      ? "Clean chat by default. Elaborate opens a brief beside the thread — minimize anytime; saved briefs stay on the answer."
                       : "Short moves on the left. The living memo grows on the right."}
                   </p>
                 </div>
@@ -431,56 +505,131 @@ export default function Home() {
                 </div>
               </div>
             ) : (
-              <div className="mx-auto flex max-w-lg flex-col gap-4">
-                {messages.map((msg) => (
-                  <div
-                    key={msg.id}
-                    className={cn(
-                      "flex flex-col gap-2",
-                      msg.role === "user" ? "items-end" : "items-start",
-                    )}
-                  >
+              <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
+                {messages.map((msg) => {
+                  const savedEntries = Object.entries(msg.briefs ?? {});
+                  const isActiveMsg =
+                    briefPaneOpen && openBrief?.messageId === msg.id;
+                  return (
                     <div
+                      key={msg.id}
                       className={cn(
-                        "max-w-[95%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-                        msg.role === "user"
-                          ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                          : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
+                        "flex flex-col gap-2",
+                        msg.role === "user" ? "items-end" : "items-start",
                       )}
                     >
-                      {msg.content}
-                    </div>
-                    {msg.role === "assistant" ? (
-                      <div className="flex max-w-[95%] flex-wrap items-center gap-1.5">
-                        {msg.confidence ? (
-                          <Badge>confidence · {msg.confidence}</Badge>
-                        ) : null}
-                        {msg.hooks?.map((hook) => (
-                          <button
-                            key={hook.id}
-                            type="button"
-                            disabled={busy}
-                            onClick={() => onHookClick(msg, hook)}
-                            className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-                          >
-                            {hook.label}
-                          </button>
-                        ))}
-                        {mode === "consult" ? (
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void onElaborate(msg)}
-                            className="inline-flex items-center gap-1 rounded-full border border-zinc-900 bg-zinc-900 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-zinc-800 disabled:opacity-50 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                          >
-                            <Maximize2 className="h-3 w-3" />
-                            Elaborate
-                          </button>
-                        ) : null}
+                      <div
+                        className={cn(
+                          "max-w-[95%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                          msg.role === "user"
+                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                            : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
+                          isActiveMsg &&
+                            "ring-2 ring-zinc-900 dark:ring-zinc-100",
+                        )}
+                      >
+                        {msg.content}
                       </div>
-                    ) : null}
-                  </div>
-                ))}
+
+                      {msg.role === "assistant" ? (
+                        <div className="flex max-w-[95%] flex-col gap-1.5">
+                          <div className="flex flex-wrap items-center gap-1.5">
+                            {msg.confidence ? (
+                              <Badge>confidence · {msg.confidence}</Badge>
+                            ) : null}
+
+                            {msg.hooks?.map((hook) => {
+                              const saved = msg.briefs?.[hook.id];
+                              const isOpen =
+                                openBrief?.messageId === msg.id &&
+                                openBrief.key === hook.id;
+                              return (
+                                <button
+                                  key={hook.id}
+                                  type="button"
+                                  disabled={busy}
+                                  onClick={() => onHookClick(msg, hook)}
+                                  title={
+                                    saved
+                                      ? "Reopen saved brief"
+                                      : "Elaborate on this"
+                                  }
+                                  className={cn(
+                                    "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                    saved
+                                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                                    isOpen && "ring-2 ring-zinc-400 ring-offset-1",
+                                  )}
+                                >
+                                  {saved ? (
+                                    <span className="inline-flex items-center gap-1">
+                                      <FileText className="h-3 w-3" />
+                                      {hook.label}
+                                    </span>
+                                  ) : (
+                                    hook.label
+                                  )}
+                                </button>
+                              );
+                            })}
+
+                            {mode === "consult" ? (
+                              <button
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onElaborate(msg)}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                  msg.briefs?.[FULL_BRIEF_KEY]
+                                    ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                    : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
+                                  openBrief?.messageId === msg.id &&
+                                    openBrief.key === FULL_BRIEF_KEY &&
+                                    "ring-2 ring-zinc-400 ring-offset-1",
+                                )}
+                              >
+                                {msg.briefs?.[FULL_BRIEF_KEY] ? (
+                                  <>
+                                    <FileText className="h-3 w-3" />
+                                    View brief
+                                  </>
+                                ) : (
+                                  <>
+                                    <Maximize2 className="h-3 w-3" />
+                                    Elaborate
+                                  </>
+                                )}
+                              </button>
+                            ) : null}
+                          </div>
+
+                          {mode === "consult" && savedEntries.length > 1 ? (
+                            <div className="flex flex-wrap gap-1">
+                              {savedEntries.map(([key, brief]) => (
+                                <button
+                                  key={key}
+                                  type="button"
+                                  onClick={() => openSavedBrief(msg.id, key)}
+                                  className={cn(
+                                    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
+                                    openBrief?.messageId === msg.id &&
+                                      openBrief.key === key &&
+                                      "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100",
+                                  )}
+                                >
+                                  <ChevronRight className="h-3 w-3" />
+                                  {brief.title}
+                                </button>
+                              ))}
+                            </div>
+                          ) : null}
+                        </div>
+                      ) : null}
+                    </div>
+                  );
+                })}
+
                 {busy ? (
                   <div className="flex items-center gap-2 text-xs text-zinc-500">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -499,7 +648,7 @@ export default function Home() {
               </p>
             ) : null}
             <form
-              className="mx-auto flex max-w-lg items-end gap-2"
+              className={cn("mx-auto flex items-end gap-2", chatMaxWidth)}
               onSubmit={(e) => {
                 e.preventDefault();
                 void onSubmit();
@@ -534,69 +683,56 @@ export default function Home() {
           </div>
         </section>
 
-        {/* Right: brief / sediment */}
-        <section className="flex min-h-[50vh] flex-col bg-white dark:bg-zinc-950">
-          <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
-            <div>
-              <h2 className="text-sm font-semibold">{paneTitle}</h2>
-              <p className="text-xs text-zinc-500">
-                {mode === "consult"
-                  ? "Depth on demand — not another chat bubble"
-                  : "Living working paper revised by each move"}
-              </p>
+        {showSidePane ? (
+          <section className="flex min-h-[40vh] flex-col bg-white dark:bg-zinc-950 lg:min-h-0">
+            <div className="flex items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold">{paneTitle}</h2>
+                <p className="text-xs text-zinc-500">
+                  {mode === "consult"
+                    ? "Saved with the answer — minimize to return to chat"
+                    : "Living working paper revised by each move"}
+                </p>
+              </div>
+              <div className="flex shrink-0 items-center gap-1.5">
+                {mode === "research" ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={busy || !sediment.claim}
+                    onClick={() => void onCompact()}
+                  >
+                    <Minimize2 className="h-3.5 w-3.5" />
+                    Compact
+                  </Button>
+                ) : (
+                  <Button
+                    type="button"
+                    variant="ghost"
+                    size="sm"
+                    onClick={minimizeBrief}
+                    title="Minimize brief"
+                  >
+                    <X className="h-4 w-4" />
+                    <span className="ml-1 hidden sm:inline">Minimize</span>
+                  </Button>
+                )}
+              </div>
             </div>
-            {mode === "research" ? (
-              <Button
-                type="button"
-                variant="outline"
-                size="sm"
-                disabled={busy || !sediment.claim}
-                onClick={() => void onCompact()}
-              >
-                <Minimize2 className="h-3.5 w-3.5" />
-                Compact
-              </Button>
-            ) : brief ? (
-              <Button
-                type="button"
-                variant="ghost"
-                size="sm"
-                onClick={() => {
-                  setBrief(null);
-                  setBriefTitle(null);
-                }}
-              >
-                Clear
-              </Button>
-            ) : null}
-          </div>
-          <ScrollArea className="flex-1 px-4 py-4">
-            {mode === "consult" ? (
-              brief ? (
-                <SimpleMarkdown text={brief} />
-              ) : (
-                <div className="flex h-full flex-col justify-center gap-2 text-sm text-zinc-500">
-                  <p className="font-medium text-zinc-700 dark:text-zinc-200">
-                    No brief yet
-                  </p>
-                  <p>
-                    Stay compressed on the left. Click a chip or{" "}
-                    <span className="font-medium text-zinc-700 dark:text-zinc-200">
-                      Elaborate
-                    </span>{" "}
-                    when you want a structured document here.
-                  </p>
-                </div>
-              )
-            ) : (
-              <SedimentView
-                sediment={sediment}
-                delta={delta}
-                note={compactNote}
-              />
-            )}
-          </ScrollArea>
-        </section>
+            <ScrollArea className="flex-1 px-4 py-4">
+              {mode === "consult" && activeBrief ? (
+                <SimpleMarkdown text={activeBrief.brief.markdown} />
+              ) : mode === "research" ? (
+                <SedimentView
+                  sediment={sediment}
+                  delta={delta}
+                  note={compactNote}
+                />
+              ) : null}
+            </ScrollArea>
+          </section>
+        ) : null}
       </main>
     </div>
   );

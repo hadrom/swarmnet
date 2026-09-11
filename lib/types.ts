@@ -43,13 +43,24 @@ export type CompactResponse = {
 
 export type ChatRole = "user" | "assistant";
 
+/** One saved elaboration, keyed on the message under `briefs`. */
+export type SavedBrief = {
+  title: string;
+  markdown: string;
+  hookId?: string;
+};
+
 export type ThreadMessage = {
   id: string;
   role: ChatRole;
   content: string;
   confidence?: LiteResponse["confidence"];
   hooks?: Hook[];
+  /** Saved elaborations for this answer. Key is hook id, or "full". */
+  briefs?: Record<string, SavedBrief>;
 };
+
+export const FULL_BRIEF_KEY = "full";
 
 export function emptySediment(): Sediment {
   return {
