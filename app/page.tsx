@@ -7,8 +7,7 @@ import {
   FileText,
   Loader2,
   Maximize2,
-  MessageSquare,
-  Minimize2,
+  NotebookPen,
   Sparkles,
   X,
 } from "lucide-react";
@@ -30,12 +29,13 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-const NOTES_STORAGE_KEY = "two-lane-working-notes-v1";
+const STORAGE_KEY = "two-lane-notepad-v2";
 
-type PersistedNotes = {
+type Persisted = {
   notes: WorkingNotes;
   chips: Hook[];
   rootedFromId: string | null;
+  jotting: boolean;
 };
 
 function uid() {
@@ -56,27 +56,27 @@ function notesAreEmpty(notes: WorkingNotes) {
   );
 }
 
-function loadPersisted(): PersistedNotes | null {
+function loadPersisted(): Persisted | null {
   if (typeof window === "undefined") return null;
   try {
-    const raw = sessionStorage.getItem(NOTES_STORAGE_KEY);
+    const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
-    return JSON.parse(raw) as PersistedNotes;
+    return JSON.parse(raw) as Persisted;
   } catch {
     return null;
   }
 }
 
-function persistNotes(payload: PersistedNotes) {
+function savePersisted(payload: Persisted) {
   if (typeof window === "undefined") return;
   try {
     if (notesAreEmpty(payload.notes)) {
-      sessionStorage.removeItem(NOTES_STORAGE_KEY);
+      sessionStorage.removeItem(STORAGE_KEY);
       return;
     }
-    sessionStorage.setItem(NOTES_STORAGE_KEY, JSON.stringify(payload));
+    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
   } catch {
-    // ignore quota / private mode
+    // ignore
   }
 }
 
@@ -112,7 +112,7 @@ function SimpleMarkdown({ text }: { text: string }) {
   );
 }
 
-function NotesView({
+function NotepadView({
   notes,
   tip,
 }: {
@@ -123,11 +123,11 @@ function NotesView({
     return (
       <div className="flex h-full flex-col justify-center gap-2 text-sm text-zinc-500">
         <p className="font-medium text-zinc-700 dark:text-zinc-200">
-          No notes yet
+          Empty notepad
         </p>
         <p>
-          Click Discuss on an answer to start a shared memo here. Keep chatting
-          as usual — this side grows as an audit trail of what you lock in.
+          Click Take notes on an answer. Keep chatting — we jot what you settle
+          so both of you can follow along.
         </p>
       </div>
     );
@@ -135,16 +135,21 @@ function NotesView({
 
   const Section = ({
     title,
+    hint,
     items,
   }: {
     title: string;
+    hint: string;
     items: string[];
   }) =>
     items.length === 0 ? null : (
       <div className="space-y-1.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          {title}
-        </h3>
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            {title}
+          </h3>
+          <p className="text-[11px] text-zinc-400">{hint}</p>
+        </div>
         <ul className="space-y-1 text-sm text-zinc-700 dark:text-zinc-200">
           {items.map((item) => (
             <li key={item} className="flex gap-2">
@@ -161,7 +166,7 @@ function NotesView({
       {notes.topic ? (
         <div className="space-y-1">
           <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Topic
+            Talking about
           </h3>
           <p className="text-sm font-medium text-zinc-900 dark:text-zinc-50">
             {notes.topic}
@@ -170,22 +175,40 @@ function NotesView({
       ) : null}
 
       <div className="space-y-1.5">
-        <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-          Where we are
-        </h3>
+        <div>
+          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+            So far
+          </h3>
+          <p className="text-[11px] text-zinc-400">
+            The shared picture right now
+          </p>
+        </div>
         <p className="text-sm leading-relaxed text-zinc-800 dark:text-zinc-100">
           {notes.whereWeAre || "—"}
         </p>
       </div>
 
-      <Section title="Agreed" items={notes.agreed} />
-      <Section title="Still open" items={notes.stillOpen} />
+      <Section
+        title="We've settled"
+        hint="Things you both lined up on"
+        items={notes.agreed}
+      />
+      <Section
+        title="Still wondering"
+        hint="Not decided yet — keep chewing on these"
+        items={notes.stillOpen}
+      />
 
       {notes.trail.length > 0 ? (
         <div className="space-y-1.5">
-          <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
-            Trail
-          </h3>
+          <div>
+            <h3 className="text-xs font-semibold uppercase tracking-wide text-zinc-500">
+              How we got here
+            </h3>
+            <p className="text-[11px] text-zinc-400">
+              Short breadcrumbs as you talked
+            </p>
+          </div>
           <ol className="space-y-2 text-sm text-zinc-700 dark:text-zinc-200">
             {notes.trail.map((entry, i) => (
               <li
@@ -196,9 +219,7 @@ function NotesView({
                     "bg-amber-50/80 dark:bg-amber-950/30",
                 )}
               >
-                <span className="shrink-0 text-xs text-zinc-400">
-                  {i + 1}.
-                </span>
+                <span className="shrink-0 text-xs text-zinc-400">{i + 1}.</span>
                 <span>{entry}</span>
               </li>
             ))}
@@ -227,33 +248,35 @@ export default function Home() {
   const [chips, setChips] = useState<Hook[]>(DISCUSS_CHIPS);
   const [notes, setNotes] = useState<WorkingNotes>(() => emptyNotes());
   const [tightenTip, setTightenTip] = useState<string | null>(null);
+  /** Actively jotting while chatting (friends writing as they talk). */
+  const [jotting, setJotting] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
 
-  // Restore notes from this browser tab session so minimize / refresh keep progress.
   useEffect(() => {
     const saved = loadPersisted();
     if (saved && !notesAreEmpty(saved.notes)) {
       setNotes(saved.notes);
       setChips(saved.chips?.length ? saved.chips : DISCUSS_CHIPS);
       setRootedFromId(saved.rootedFromId);
+      setJotting(Boolean(saved.jotting));
     }
     setHydrated(true);
   }, []);
 
   useEffect(() => {
     if (!hydrated) return;
-    persistNotes({ notes, chips, rootedFromId });
-  }, [notes, chips, rootedFromId, hydrated]);
+    savePersisted({ notes, chips, rootedFromId, jotting });
+  }, [notes, chips, rootedFromId, jotting, hydrated]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
   }, [messages, busy]);
 
   const hasNotes = !notesAreEmpty(notes);
-  const notesOpen = sideKind === "notes";
-  const showNotesDock = hasNotes && sideKind !== "notes";
+  const notepadVisible = sideKind === "notes" && hasNotes;
+  const showNotepadDock = hasNotes && sideKind !== "notes";
 
   const activeBrief = useMemo(() => {
     if (!openBrief) return null;
@@ -264,31 +287,25 @@ export default function Home() {
   }, [openBrief, messages]);
 
   const showSidePane =
-    (sideKind === "brief" && activeBrief !== null) ||
-    (sideKind === "notes" && hasNotes);
+    (sideKind === "brief" && activeBrief !== null) || notepadVisible;
 
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
-  const paneTitle =
-    sideKind === "brief" && activeBrief
-      ? `Brief · ${activeBrief.brief.title}`
-      : notes.topic
-        ? `Notes · ${notes.topic}`
-        : "Working notes";
-
-  function minimizeSide() {
-    if (sideKind === "brief") {
-      setOpenBrief(null);
-      // Prefer returning to notes if they exist — never discard them.
-      setSideKind(hasNotes ? null : null);
-      return;
-    }
+  function hidePane() {
+    setOpenBrief(null);
     setSideKind(null);
   }
 
-  function openNotesPane() {
+  function showNotepad() {
     setOpenBrief(null);
     setSideKind("notes");
+  }
+
+  function doneJotting() {
+    setJotting(false);
+    setSideKind(null);
+    setOpenBrief(null);
+    setModelHint(null);
   }
 
   function openSavedBrief(messageId: string, key: string) {
@@ -312,8 +329,8 @@ export default function Home() {
     setSideKind("brief");
   }
 
-  /** Open notes beside chat. Seeds only once; never wipes existing progress. */
-  function openDiscuss(msg: ThreadMessage, opts?: { restart?: boolean }) {
+  /** Start or reopen the shared notepad. Never wipes unless restart. */
+  function takeNotes(msg: ThreadMessage, opts?: { restart?: boolean }) {
     const preferredKey =
       (openBrief?.messageId === msg.id ? openBrief.key : null) ??
       (msg.briefs?.[FULL_BRIEF_KEY] ? FULL_BRIEF_KEY : null) ??
@@ -322,8 +339,7 @@ export default function Home() {
     const brief = preferredKey ? msg.briefs?.[preferredKey] : null;
 
     if (opts?.restart || notesAreEmpty(notes)) {
-      const seeded = seedNotesFromAnswer(msg.content, brief ?? null);
-      setNotes(seeded);
+      setNotes(seedNotesFromAnswer(msg.content, brief ?? null));
       setTightenTip(null);
       setChips(DISCUSS_CHIPS);
       setRootedFromId(msg.id);
@@ -332,13 +348,10 @@ export default function Home() {
     setMessages((prev) =>
       prev.map((m) => (m.id === msg.id ? { ...m, promoted: true } : m)),
     );
+    setJotting(true);
     setOpenBrief(null);
     setSideKind("notes");
-    setModelHint(
-      notesAreEmpty(notes) || opts?.restart
-        ? "notes started · local"
-        : "notes restored",
-    );
+    setModelHint(null);
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -363,7 +376,7 @@ export default function Home() {
     };
   }
 
-  async function sendDiscuss(
+  async function sendWithNotes(
     message: string,
     prior: ThreadMessage[],
     current: WorkingNotes,
@@ -378,7 +391,7 @@ export default function Home() {
       body: JSON.stringify({ message, notes: current, history }),
     });
     const data = await res.json();
-    if (!res.ok) throw new Error(data.error || "Discuss request failed");
+    if (!res.ok) throw new Error(data.error || "Request failed");
     setModelHint(
       data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.5-flash-lite",
     );
@@ -403,13 +416,13 @@ export default function Home() {
     setMessages(nextThread);
     setBusy(true);
     try {
-      // Once notes exist, every turn quietly updates them — even if the pane is minimized.
-      if (hasNotes) {
+      if (jotting && hasNotes) {
+        // Keep notepad visible if a brief was covering it; otherwise leave dock alone.
         if (sideKind === "brief") {
           setOpenBrief(null);
           setSideKind("notes");
         }
-        const data = await sendDiscuss(question, messages, notes);
+        const data = await sendWithNotes(question, messages, notes);
         setNotes(data.notes);
         setTightenTip(null);
         if (data.hooks?.length) setChips(data.hooks);
@@ -490,7 +503,7 @@ export default function Home() {
     }
   }
 
-  async function onTighten() {
+  async function onCleanUp() {
     if (busy || (!notes.whereWeAre && !notes.topic)) return;
     setBusy(true);
     setError(null);
@@ -501,7 +514,7 @@ export default function Home() {
         body: JSON.stringify({ notes }),
       });
       const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Tighten failed");
+      if (!res.ok) throw new Error(data.error || "Clean up failed");
       setNotes(data.notes);
       setTightenTip(data.note);
       setSideKind("notes");
@@ -509,15 +522,14 @@ export default function Home() {
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Tighten failed");
+      setError(err instanceof Error ? err.message : "Clean up failed");
     } finally {
       setBusy(false);
     }
   }
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
-    // After notes exist, chips on later replies are follow-ups (same as typing).
-    if (hasNotes && msg.confidence == null) {
+    if (jotting && msg.confidence == null) {
       void onSubmit(hook.label);
       return;
     }
@@ -534,15 +546,10 @@ export default function Home() {
               <h1 className="truncate text-sm font-semibold tracking-tight">
                 Two-lane LLM demo
               </h1>
-              {hasNotes ? (
-                <Badge className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-                  notes live
-                </Badge>
-              ) : null}
             </div>
             <p className="mt-0.5 text-xs text-zinc-500">
-              One chat. Elaborate opens a brief. Discuss pins living notes beside
-              you — minimize anytime; progress stays.
+              Chat as usual. Take notes when you want a shared scratchpad — like
+              two friends jotting progress so you both stay aligned.
             </p>
           </div>
           {modelHint ? (
@@ -576,8 +583,8 @@ export default function Home() {
                     Ask something operational
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    Answers stay short. Elaborate for a brief. Discuss when you
-                    want a living agreement trail that sticks around.
+                    Short answers first. Elaborate for a brief. Take notes when
+                    you want to write down what you&apos;re converging on.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -621,7 +628,7 @@ export default function Home() {
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
                           isRootSource &&
                             hasNotes &&
-                            "ring-2 ring-amber-500/70",
+                            "ring-2 ring-amber-500/60",
                         )}
                       >
                         {msg.content}
@@ -636,7 +643,7 @@ export default function Home() {
 
                             {(isConsultAnswer
                               ? msg.hooks
-                              : hasNotes
+                              : jotting
                                 ? msg.hooks?.length
                                   ? msg.hooks
                                   : chips
@@ -652,13 +659,6 @@ export default function Home() {
                                   type="button"
                                   disabled={busy}
                                   onClick={() => onHookClick(msg, hook)}
-                                  title={
-                                    isConsultAnswer
-                                      ? saved
-                                        ? "Reopen saved brief"
-                                        : "Elaborate on this"
-                                      : "Ask this follow-up"
-                                  }
                                   className={cn(
                                     "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                                     saved
@@ -691,9 +691,6 @@ export default function Home() {
                                     msg.briefs?.[FULL_BRIEF_KEY]
                                       ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                                       : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
-                                    openBrief?.messageId === msg.id &&
-                                      openBrief.key === FULL_BRIEF_KEY &&
-                                      "ring-2 ring-zinc-400 ring-offset-1",
                                   )}
                                 >
                                   {msg.briefs?.[FULL_BRIEF_KEY] ? (
@@ -711,21 +708,27 @@ export default function Home() {
                                 <button
                                   type="button"
                                   disabled={busy}
-                                  onClick={() => openDiscuss(msg)}
+                                  onClick={() => takeNotes(msg)}
                                   className={cn(
                                     "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                                     hasNotes
                                       ? "border-amber-600 bg-amber-600 text-white"
-                                      : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70",
+                                      : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100",
                                   )}
                                   title={
                                     hasNotes
-                                      ? "Open your living notes (progress is kept)"
-                                      : "Pin living notes beside this chat"
+                                      ? jotting
+                                        ? "Show the shared notepad"
+                                        : "Open the notepad and keep jotting"
+                                      : "Start a shared notepad beside the chat"
                                   }
                                 >
-                                  <MessageSquare className="h-3 w-3" />
-                                  {hasNotes ? "Open notes" : "Discuss"}
+                                  <NotebookPen className="h-3 w-3" />
+                                  {hasNotes
+                                    ? jotting
+                                      ? "Show notepad"
+                                      : "Resume notes"
+                                    : "Take notes"}
                                 </button>
                               </>
                             ) : null}
@@ -738,12 +741,7 @@ export default function Home() {
                                   key={key}
                                   type="button"
                                   onClick={() => openSavedBrief(msg.id, key)}
-                                  className={cn(
-                                    "inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200",
-                                    openBrief?.messageId === msg.id &&
-                                      openBrief.key === key &&
-                                      "bg-zinc-100 text-zinc-800 dark:bg-zinc-800 dark:text-zinc-100",
-                                  )}
+                                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
                                 >
                                   <ChevronRight className="h-3 w-3" />
                                   {brief.title}
@@ -775,33 +773,35 @@ export default function Home() {
               </p>
             ) : null}
 
-            {/* Sticky notes dock — the seamless handoff instead of header mode toggles */}
-            {showNotesDock ? (
-              <button
-                type="button"
-                onClick={openNotesPane}
-                className="mx-auto mb-2 flex w-full max-w-2xl items-center justify-between gap-3 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/50 dark:hover:bg-amber-950/80"
-              >
-                <span className="flex min-w-0 items-center gap-2">
-                  <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-800 dark:text-amber-200" />
-                  <span className="min-w-0">
-                    <span className="block truncate text-xs font-semibold text-amber-950 dark:text-amber-100">
-                      {notes.topic || "Working notes"}
-                    </span>
-                    <span className="block truncate text-[11px] text-amber-800/80 dark:text-amber-200/80">
-                      {notes.agreed.length
-                        ? `${notes.agreed.length} agreed · ${notes.stillOpen.length} open`
-                        : "Tap to reopen — progress is kept"}
-                    </span>
-                  </span>
-                </span>
-                <span className="shrink-0 text-[11px] font-medium text-amber-900 dark:text-amber-100">
-                  Open
-                </span>
-              </button>
+            {showNotepadDock ? (
+              <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/50">
+                <NotebookPen className="h-3.5 w-3.5 shrink-0 text-amber-800 dark:text-amber-200" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-amber-950 dark:text-amber-100">
+                    Notepad · {notes.topic || "your topic"}
+                  </p>
+                  <p className="truncate text-[11px] text-amber-800/80 dark:text-amber-200/80">
+                    {jotting
+                      ? "Hidden while you chat — still jotting as you go"
+                      : "Saved. Chat is normal again — open anytime to reread"}
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+                  onClick={() => {
+                    if (!jotting) setJotting(true);
+                    showNotepad();
+                  }}
+                >
+                  {jotting ? "Show" : "Open"}
+                </Button>
+              </div>
             ) : null}
 
-            {hasNotes ? (
+            {jotting && hasNotes ? (
               <div className="mx-auto mb-2 flex max-w-lg flex-wrap gap-1.5">
                 {chips.map((hook) => (
                   <button
@@ -835,13 +835,13 @@ export default function Home() {
                 }}
                 rows={2}
                 placeholder={
-                  hasNotes
-                    ? "Keep chatting — notes update even if minimized…"
+                  jotting
+                    ? "Keep talking — we jot what you settle on the side…"
                     : "Ask a consult question…"
                 }
                 className={cn(
                   "min-h-[44px] flex-1 resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
-                  hasNotes
+                  jotting
                     ? "border-amber-200 dark:border-amber-900"
                     : "border-zinc-200 dark:border-zinc-700",
                 )}
@@ -860,16 +860,22 @@ export default function Home() {
 
         {showSidePane ? (
           <section className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
-            <div className="flex shrink-0 items-center justify-between border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold">{paneTitle}</h2>
+                <h2 className="truncate text-sm font-semibold">
+                  {sideKind === "brief" && activeBrief
+                    ? `Brief · ${activeBrief.brief.title}`
+                    : "Shared notepad"}
+                </h2>
                 <p className="text-xs text-zinc-500">
                   {sideKind === "brief"
-                    ? "Snapshot of one answer — minimize anytime"
-                    : "Living trail — minimize anytime; nothing is wiped"}
+                    ? "Snapshot of one answer"
+                    : jotting
+                      ? "Jotting as you talk — Hide or Done anytime"
+                      : "Saved notes — Resume to keep jotting"}
                 </p>
               </div>
-              <div className="flex shrink-0 items-center gap-1.5">
+              <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
                 {sideKind === "notes" ? (
                   <>
                     <Button
@@ -877,24 +883,43 @@ export default function Home() {
                       variant="outline"
                       size="sm"
                       disabled={busy || (!notes.whereWeAre && !notes.topic)}
-                      onClick={() => void onTighten()}
+                      onClick={() => void onCleanUp()}
                     >
-                      <Minimize2 className="h-3.5 w-3.5" />
-                      Tighten
+                      Clean up
                     </Button>
+                    {jotting ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={doneJotting}
+                        title="Stop jotting. Chat goes back to normal. Notes are kept."
+                      >
+                        Done
+                      </Button>
+                    ) : (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => setJotting(true)}
+                      >
+                        Resume
+                      </Button>
+                    )}
                     {rootedFromId ? (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        title="Wipe and restart notes from the rooted answer"
+                        title="Throw away this notepad and start fresh from the original answer"
                         onClick={() => {
                           const root = messages.find((m) => m.id === rootedFromId);
-                          if (root) openDiscuss(root, { restart: true });
+                          if (root) takeNotes(root, { restart: true });
                         }}
                       >
-                        Restart
+                        Start over
                       </Button>
                     ) : null}
                   </>
@@ -903,11 +928,17 @@ export default function Home() {
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={minimizeSide}
-                  title="Minimize pane"
+                  onClick={hidePane}
+                  title={
+                    sideKind === "notes"
+                      ? "Hide notepad (keeps everything)"
+                      : "Close brief"
+                  }
                 >
                   <X className="h-4 w-4" />
-                  <span className="ml-1 hidden sm:inline">Minimize</span>
+                  <span className="ml-1 hidden sm:inline">
+                    {sideKind === "notes" ? "Hide" : "Close"}
+                  </span>
                 </Button>
               </div>
             </div>
@@ -915,7 +946,7 @@ export default function Home() {
               {sideKind === "brief" && activeBrief ? (
                 <SimpleMarkdown text={activeBrief.brief.markdown} />
               ) : sideKind === "notes" ? (
-                <NotesView notes={notes} tip={tightenTip} />
+                <NotepadView notes={notes} tip={tightenTip} />
               ) : null}
             </ScrollArea>
           </section>

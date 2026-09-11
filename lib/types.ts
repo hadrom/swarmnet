@@ -14,19 +14,19 @@ export type BriefResponse = {
 };
 
 /**
- * Living side memo for Discuss mode: shared understanding + audit trail.
+ * Shared notepad while chatting — what two people would jot to stay aligned.
  * Not a peer-review / debate scorecard.
  */
 export type WorkingNotes = {
-  /** Short label for the rabbit hole. */
+  /** Short label for what you're talking about. */
   topic: string;
   /** Plain-language snapshot of where things stand right now. */
   whereWeAre: string;
-  /** Points both sides have treated as settled in this thread. */
+  /** Things you've clearly settled together. */
   agreed: string[];
-  /** Unresolved items still worth chasing. */
+  /** Things still fuzzy or undecided. */
   stillOpen: string[];
-  /** Chronological audit trail (oldest → newest), one short line per turn. */
+  /** How you got here (oldest → newest), one short line per turn. */
   trail: string[];
 };
 
@@ -58,18 +58,18 @@ export type ThreadMessage = {
   hooks?: Hook[];
   /** Saved elaborations for this answer. Key is hook id, or "full". */
   briefs?: Record<string, SavedBrief>;
-  /** True once this answer opened a Discuss notes pane. */
+  /** True once this answer started a shared notepad. */
   promoted?: boolean;
 };
 
 export const FULL_BRIEF_KEY = "full";
 
-/** Soft follow-up chips while discussing — same style as consult, not debate moves. */
+/** Soft follow-ups while jotting notes together. */
 export const DISCUSS_CHIPS: Hook[] = [
-  { id: "agreed", label: "What have we agreed?" },
-  { id: "open", label: "What's still open?" },
-  { id: "change", label: "What would change this?" },
-  { id: "next", label: "Suggested next step" },
+  { id: "settled", label: "What have we settled?" },
+  { id: "unsure", label: "What are we still unsure about?" },
+  { id: "change", label: "What would change our minds?" },
+  { id: "next", label: "Sensible next step" },
 ];
 
 export function emptyNotes(): WorkingNotes {
@@ -125,11 +125,11 @@ export function seedNotesFromAnswer(
     stillOpen:
       stillOpen.length > 0
         ? stillOpen
-        : ["Anything we should lock in before acting?"],
+        : ["Anything we should settle before acting?"],
     trail: [
       brief
-        ? `Started notes from consult + brief “${brief.title}”`
-        : "Started notes from consult answer",
+        ? `Started jotting from the answer + brief “${brief.title}”`
+        : "Started jotting from this answer",
     ],
   };
 }
