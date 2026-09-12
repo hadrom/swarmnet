@@ -31,10 +31,13 @@ import type {
 import {
   DISCUSS_CHIPS,
   FULL_BRIEF_KEY,
-  emptyCanvas,
+  canvasConvergenceStatus,
   emptyNotes,
+  promoteBriefIntoCanvas,
   seedNotesFromAnswer,
+  seedWorkingCanvas,
 } from "@/lib/types";
+import type { PromoteBriefMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Full session — consult spine + discuss branches stay in sync. */
@@ -386,6 +389,10 @@ export default function Home() {
   const showBriefPane = sideKind === "brief" && activeBrief !== null;
   const showCanvasPane = !inDiscuss && sideKind === "canvas" && canvas != null;
   const showSidePane = showMemoPane || showBriefPane || showCanvasPane;
+  const canvasStatus = useMemo(
+    () => (canvas ? canvasConvergenceStatus(canvas) : null),
+    [canvas],
+  );
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
   function patchThread(
@@ -442,15 +449,32 @@ export default function Home() {
     const seedText = msg?.content?.trim() ?? "";
     const next =
       canvas ??
-      emptyCanvas(
+      seedWorkingCanvas(
         seedText
           ? {
               title: seedText.split(/[.!?]/)[0]?.trim().slice(0, 72) || "Working note",
-              bodyText: seedText,
+              seedAnswer: seedText,
             }
           : { title: "Working note" },
       );
     setCanvas(next);
+    setOpenBrief(null);
+    setSideKind("canvas");
+    setError(null);
+  }
+
+  function promoteBrief(mode: PromoteBriefMode) {
+    if (!activeBrief) return;
+    const seedText = activeBrief.message.content.trim();
+    const base =
+      canvas ??
+      seedWorkingCanvas({
+        title: seedText.split(/[.!?]/)[0]?.trim().slice(0, 72) || "Working note",
+        seedAnswer: seedText,
+      });
+    const next = promoteBriefIntoCanvas(base, activeBrief.brief, mode);
+    setCanvas(next);
+    setCanvasEpoch((n) => n + 1);
     setOpenBrief(null);
     setSideKind("canvas");
     setError(null);
@@ -848,28 +872,6 @@ export default function Home() {
             <button
               type="button"
               disabled={busy}
-              onClick={() => enterDiscuss(msg)}
-              className={cn(
-                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                hasBranch
-                  ? "border-amber-600 bg-amber-600 text-white"
-                  : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100",
-              )}
-              title={
-                hasBranch
-                  ? "Reopen this Discuss branch"
-                  : "Enter Discuss on this answer"
-              }
-            >
-              <MessageSquare className="h-3 w-3" />
-              {hasBranch ? "Reopen discuss" : "Discuss"}
-            </button>
-          ) : null}
-
-          {!inDiscuss ? (
-            <button
-              type="button"
-              disabled={busy}
               onClick={() => openCanvas(msg)}
               className={cn(
                 "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
@@ -877,10 +879,32 @@ export default function Home() {
                   ? "border-sky-700 bg-sky-700 text-white"
                   : "border-sky-800/70 bg-sky-50 text-sky-950 hover:bg-sky-100 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100",
               )}
-              title="Open a writable canvas seeded from this answer"
+              title="Open ground-truth canvas seeded from this answer"
             >
               <PanelRight className="h-3 w-3" />
               {canvas ? "Open canvas" : "Canvas"}
+            </button>
+          ) : null}
+
+          {!inDiscuss ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => enterDiscuss(msg)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                hasBranch
+                  ? "border-amber-600 bg-amber-600 text-white"
+                  : "border-zinc-200 bg-white text-zinc-500 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-400",
+              )}
+              title={
+                hasBranch
+                  ? "Reopen Discuss branch (alternate lane)"
+                  : "Discuss — alternate branch lane"
+              }
+            >
+              <MessageSquare className="h-3 w-3" />
+              {hasBranch ? "Reopen discuss" : "Discuss"}
             </button>
           ) : null}
         </div>
@@ -981,7 +1005,7 @@ export default function Home() {
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {inDiscuss
                 ? `Branch on: ${previewOf(rootAnswer?.content ?? activeThread?.rootPreview ?? "", 100)}`
-                : "Consult for short answers. Discuss opens a separate timeline on one answer."}
+                : "Consult for short answers. Elaborate to read deeper. Canvas is the ground-truth doc."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1051,8 +1075,8 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Elaborate opens a brief. Canvas builds a writable doc you
-                    and the model can edit. Discuss opens a separate timeline.
+                    Elaborate is a deep read. Canvas is the checked ledger
+                    you and chat edit toward decisions.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -1239,9 +1263,11 @@ export default function Home() {
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {showBriefPane
-                    ? "Overview plus deeper angles on this answer"
+                    ? "Deep read — promote keepers into Canvas"
                     : showCanvasPane
-                      ? "Writable doc — edit here or ask in chat"
+                      ? canvasStatus
+                        ? `${canvasStatus.decisions} decided · ${canvasStatus.open} open — edit or ask in chat`
+                        : "Ground-truth doc — edit here or ask in chat"
                       : "Updates as you talk in this branch"}
                 </p>
               </div>
@@ -1286,6 +1312,19 @@ export default function Home() {
                     }}
                   >
                     Back to memo
+                  </Button>
+                ) : null}
+                {showBriefPane && !inDiscuss && canvas ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setOpenBrief(null);
+                      setSideKind("canvas");
+                    }}
+                  >
+                    Back to canvas
                   </Button>
                 ) : null}
                 <Button
@@ -1379,6 +1418,41 @@ export default function Home() {
                       </div>
                     );
                   })()}
+                  <div className="flex flex-wrap gap-1.5 rounded-xl border border-sky-200 bg-sky-50/80 p-2 dark:border-sky-900 dark:bg-sky-950/30">
+                    <p className="w-full text-[11px] font-medium text-sky-950 dark:text-sky-100">
+                      Keep in Canvas
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => promoteBrief("bottom")}
+                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                    >
+                      Bottom line
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => promoteBrief("unknowns")}
+                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                    >
+                      Open questions
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => promoteBrief("full")}
+                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                    >
+                      Full brief
+                    </Button>
+                  </div>
                   <SimpleMarkdown text={activeBrief.brief.markdown} />
                 </div>
               ) : showMemoPane && activeThread ? (

@@ -202,11 +202,55 @@ function textToHtml(text: string): string {
   return html || "<p></p>";
 }
 
+function escapeHtml(text: string): string {
+  return text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+}
+
+/** Soft working-note skeleton — canvas is ground truth; sections guide convergence. */
+export function seedWorkingCanvas(opts?: {
+  title?: string;
+  seedAnswer?: string;
+}): CanvasDoc {
+  const seed = (opts?.seedAnswer ?? "").replace(/\s+/g, " ").trim();
+  const title =
+    opts?.title?.trim() ||
+    seed.split(/[.!?]/)[0]?.trim().slice(0, 72) ||
+    "Working note";
+  const bottom = seed
+    ? escapeHtml(seed.slice(0, 400))
+    : "What we&apos;re currently holding as true.";
+  const notes = seed
+    ? escapeHtml(seed)
+    : "Scratch context from consult. Promote brief lines or ask chat to draft.";
+  const bodyHtml = [
+    "<h2>Bottom line</h2>",
+    `<p>${bottom}</p>`,
+    "<h2>Decisions</h2>",
+    "<ul><li><em>Nothing locked yet.</em></li></ul>",
+    "<h2>Open questions</h2>",
+    "<ul><li><em>What still needs settling?</em></li></ul>",
+    "<h2>Notes</h2>",
+    `<p>${notes}</p>`,
+  ].join("");
+  return {
+    title,
+    bodyHtml,
+    bodyText: stripHtml(bodyHtml),
+    updatedAt: Date.now(),
+  };
+}
+
 export function emptyCanvas(seed?: {
   title?: string;
   bodyHtml?: string;
   bodyText?: string;
 }): CanvasDoc {
+  if (!seed?.bodyHtml && !seed?.bodyText) {
+    return seedWorkingCanvas({ title: seed?.title });
+  }
   const bodyText = seed?.bodyText ?? "";
   const bodyHtml = seed?.bodyHtml ?? (bodyText ? textToHtml(bodyText) : "<p></p>");
   return {
@@ -215,6 +259,89 @@ export function emptyCanvas(seed?: {
     bodyText: bodyText || stripHtml(bodyHtml),
     updatedAt: Date.now(),
   };
+}
+
+/** Count real bullets under Decisions / Open questions (ignore placeholder italics). */
+export function canvasConvergenceStatus(doc: CanvasDoc): {
+  decisions: number;
+  open: number;
+} {
+  const countFromHtml = (heading: string) => {
+    const re = new RegExp(
+      `<h2[^>]*>\\s*${heading}\\s*<\\/h2>([\\s\\S]*?)(?=<h2[^>]*>|$)`,
+      "i",
+    );
+    const match = doc.bodyHtml.match(re);
+    const block = match?.[1] ?? "";
+    const items = [...block.matchAll(/<li[^>]*>([\s\S]*?)<\/li>/gi)].map((m) =>
+      stripHtml(m[1] ?? "").trim(),
+    );
+    return items.filter(
+      (l) =>
+        l.length > 0 &&
+        !/^nothing locked/i.test(l) &&
+        !/^what still needs/i.test(l),
+    ).length;
+  };
+  return {
+    decisions: countFromHtml("Decisions"),
+    open: countFromHtml("Open questions"),
+  };
+}
+
+export type PromoteBriefMode = "bottom" | "unknowns" | "full";
+
+/** Fold an Elaborate brief into the canvas ledger (append under the right headings). */
+export function promoteBriefIntoCanvas(
+  doc: CanvasDoc,
+  brief: SavedBrief,
+  mode: PromoteBriefMode,
+): CanvasDoc {
+  const bottom = sectionFromBrief(brief.markdown, "Bottom line");
+  const unknowns = sectionFromBrief(brief.markdown, "Unknowns");
+  const depends = sectionFromBrief(brief.markdown, "What this depends on");
+  const detail = sectionFromBrief(brief.markdown, "Detail");
+
+  const bullets = (block: string) =>
+    block
+      .split("\n")
+      .map((l) => l.replace(/^[-*•]\s*/, "").trim())
+      .filter(
+        (l) =>
+          l.length > 0 &&
+          !/^none material/i.test(l) &&
+          !/^none from/i.test(l),
+      );
+
+  const li = (items: string[]) =>
+    items.map((i) => `<li>${escapeHtml(i)}</li>`).join("");
+
+  let html = "";
+  if (mode === "bottom" || mode === "full") {
+    const text = bottom || brief.markdown.slice(0, 400);
+    if (text) {
+      html += `<h3>From brief · ${escapeHtml(brief.title)}</h3><p>${escapeHtml(text.replace(/\s+/g, " ").trim())}</p>`;
+    }
+  }
+  if (mode === "unknowns" || mode === "full") {
+    const items = bullets(unknowns);
+    if (items.length) {
+      html += `<h3>Open questions · ${escapeHtml(brief.title)}</h3><ul>${li(items)}</ul>`;
+    }
+  }
+  if (mode === "full") {
+    const dep = bullets(depends);
+    const det = bullets(detail);
+    if (dep.length || det.length) {
+      html += `<h3>Notes · ${escapeHtml(brief.title)}</h3>`;
+      if (dep.length) html += `<p><strong>Depends on</strong></p><ul>${li(dep)}</ul>`;
+      if (det.length) html += `<p><strong>Detail</strong></p><ul>${li(det)}</ul>`;
+    }
+  }
+  if (!html) {
+    html = `<h3>From brief · ${escapeHtml(brief.title)}</h3><p>${escapeHtml(brief.markdown.slice(0, 500))}</p>`;
+  }
+  return applyCanvasOps(doc, [{ op: "appendHtml", html }]);
 }
 
 export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {

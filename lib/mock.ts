@@ -133,13 +133,28 @@ export function mockCanvasEdit(
   const topic = message.replace(/\s+/g, " ").trim().slice(0, 72);
   const empty = !doc.bodyText.trim();
   if (empty || /draft|write|start|create|canvas/i.test(message)) {
-    const title = doc.title === "Untitled canvas" ? topic || "Working note" : doc.title;
-    const html = `<h2>Bottom line</h2><p>${topic || "Scoped decision note."}</p><h2>What we know</h2><ul><li>Seeded from consult.</li><li>Edit freely or ask for changes.</li></ul><h2>Open questions</h2><ul><li>What should we lock before acting?</li></ul>`;
+    const title =
+      doc.title === "Untitled canvas" || doc.title === "Working note"
+        ? topic || "Working note"
+        : doc.title;
+    const html = `<h2>Bottom line</h2><p>${topic || "Scoped decision note."}</p><h2>Decisions</h2><ul><li><em>Nothing locked yet.</em></li></ul><h2>Open questions</h2><ul><li>What should we lock before acting?</li></ul><h2>Notes</h2><ul><li>Seeded from consult.</li><li>Edit freely or ask for changes.</li></ul>`;
     return {
-      reply: `Drafted a starting canvas${title ? ` titled “${title}”` : ""}. Tweak it yourself or tell me what to change.`,
+      reply: `Drafted a working canvas${title ? ` titled “${title}”` : ""}. Lock decisions or tell me what to change.`,
       ops: [
         { op: "setTitle", title },
         { op: "setBodyHtml", html },
+      ],
+    };
+  }
+  if (/settled|decided|lock|agree/i.test(message)) {
+    return {
+      reply: `Logged that under Decisions and cleared the placeholder. Say if an open question should come off the list.`,
+      ops: [
+        {
+          op: "replaceText",
+          find: "Nothing locked yet.",
+          replace: topic || "Decision captured from chat.",
+        },
       ],
     };
   }
