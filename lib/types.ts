@@ -58,9 +58,22 @@ export type ThreadMessage = {
   hooks?: Hook[];
   /** Saved elaborations for this answer. Key is hook id, or "full". */
   briefs?: Record<string, SavedBrief>;
-  /** True once this answer rooted a Discuss memo. */
-  promoted?: boolean;
 };
+
+/**
+ * A Discuss branch rooted on one consult answer.
+ * Lives outside the consult spine — own timeline + living memo.
+ */
+export type DiscussThread = {
+  rootAnswerId: string;
+  /** Short preview of the root answer for chrome / markers. */
+  rootPreview: string;
+  messages: ThreadMessage[];
+  notes: WorkingNotes;
+  chips: Hook[];
+};
+
+export type AppMode = "consult" | "discuss";
 
 export const FULL_BRIEF_KEY = "full";
 

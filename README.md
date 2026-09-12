@@ -1,6 +1,6 @@
 # Two-lane LLM demo
 
-Local prototype for cofounder demos: **Consult** for short answers, **Discuss** to converge on a shared picture beside the chat. Gemini is a disposable stand-in for an on-prem model.
+Local prototype for cofounder demos: **Consult** for short answers on a clean spine, **Discuss** as a separate mode with its own timeline on one answer. Gemini is a disposable stand-in for an on-prem model.
 
 ## Run
 
@@ -16,19 +16,21 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Consult
 
-- Short answers + drill chips
+- Short answers + drill chips on the main timeline
 - **Elaborate** opens a brief snapshot on the side (always available on assistant replies)
 
-### Discuss
+### Discuss (separate mode)
 
-1. Click **Discuss** on an answer → a living memo opens beside the chat
-2. Keep chatting — the memo tracks **So far / We've settled / Still wondering / How we got here**
-3. **Hide** tucks it away (amber strip under the composer → **Show**)
-4. **Done** pauses Discuss updates — chat is normal again; memo is kept
-5. **Discuss from here** on a different answer starts a fresh memo for that topic
-6. **New chat** clears the conversation and Discuss memo together
+1. Click **Discuss** on an answer → enter Discuss mode (chrome changes; own timeline)
+2. The root answer is pinned at the top; follow-ups stay **off** the consult spine
+3. Living memo beside the chat tracks **So far / We've settled / Still wondering / How we got here**
+4. **Hide** tucks the memo (amber strip → **Show memo**); you stay in Discuss
+5. **Done** / **Consult** returns to the spine — digression is not dumped into chat
+6. The root answer keeps a **Discussed · N turns · Reopen** marker
+7. **Discuss** on a different answer opens (or creates) that answer’s branch
+8. **New chat** clears the consult spine and all Discuss branches
 
-Persistence keeps **chat + Discuss memo as one session**. Refresh restores both. A memo is never restored without its chat (no orphan panes after a “fresh” convo).
+Persistence keeps **consult + discuss branches as one session** (`two-lane-session-v4`).
 
 ## Models
 
@@ -41,12 +43,12 @@ Persistence keeps **chat + Discuss memo as one session**. Refresh restores both.
 
 ## Demo script
 
-1. Click a starter.
+1. Click a starter (and maybe a second consult question).
 2. Optionally **Elaborate**.
-3. Click **Discuss** — memo appears.
+3. Click **Discuss** — mode switch, separate timeline + memo.
 4. Ask a follow-up; watch the memo grow.
-5. **Hide**, keep chatting, then **Show**.
-6. Click **Done** when finished; **New chat** for a clean slate.
+5. **Done** → consult spine is still clean; reopen from the marker.
+6. **New chat** for a clean slate.
 
 ## Swap to on-prem later
 

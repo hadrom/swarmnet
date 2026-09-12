@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
+  ArrowLeft,
   ArrowUp,
   ChevronRight,
   FileText,
@@ -17,6 +18,8 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CONSULT_STARTERS } from "@/lib/prompts";
 import type {
+  AppMode,
+  DiscussThread,
   Hook,
   SavedBrief,
   ThreadMessage,
@@ -30,24 +33,23 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Full session — messages + discuss memo stay in sync. */
-const STORAGE_KEY = "two-lane-session-v3";
+/** Full session — consult spine + discuss branches stay in sync. */
+const STORAGE_KEY = "two-lane-session-v4";
 const LEGACY_KEYS = [
   "two-lane-notepad-v2",
   "two-lane-working-notes-v1",
-  "two-lane-working-notes-v1",
   "two-lane-session-v1",
   "two-lane-session-v2",
+  "two-lane-session-v3",
 ];
 
-type SideKind = "brief" | "discuss";
+type SideKind = "brief" | "memo";
 
 type PersistedSession = {
   messages: ThreadMessage[];
-  notes: WorkingNotes;
-  chips: Hook[];
-  rootedFromId: string | null;
-  discussing: boolean;
+  threads: Record<string, DiscussThread>;
+  mode: AppMode;
+  activeRootId: string | null;
   sideKind: SideKind | null;
 };
 
@@ -69,6 +71,14 @@ function notesAreEmpty(notes: WorkingNotes) {
   );
 }
 
+function previewOf(text: string, max = 120) {
+  return text.replace(/\s+/g, " ").trim().slice(0, max);
+}
+
+function turnCount(thread: DiscussThread) {
+  return thread.messages.filter((m) => m.role === "user").length;
+}
+
 function clearLegacyStorage() {
   if (typeof window === "undefined") return;
   for (const key of LEGACY_KEYS) {
@@ -87,12 +97,17 @@ function loadSession(): PersistedSession | null {
     const raw = sessionStorage.getItem(STORAGE_KEY);
     if (!raw) return null;
     const parsed = JSON.parse(raw) as PersistedSession;
-    // Never restore an orphan discuss memo without its chat.
     if (!Array.isArray(parsed.messages) || parsed.messages.length === 0) {
       sessionStorage.removeItem(STORAGE_KEY);
       return null;
     }
-    return parsed;
+    return {
+      messages: parsed.messages,
+      threads: parsed.threads ?? {},
+      mode: parsed.mode === "discuss" ? "discuss" : "consult",
+      activeRootId: parsed.activeRootId ?? null,
+      sideKind: parsed.sideKind ?? null,
+    };
   } catch {
     return null;
   }
@@ -157,8 +172,8 @@ function DiscussView({
           Nothing in Discuss yet
         </p>
         <p>
-          Click Discuss on an answer. Keep chatting — this side tracks what
-          you&apos;re converging on together.
+          Keep talking — this side tracks what you&apos;re converging on
+          together.
         </p>
       </div>
     );
@@ -259,38 +274,55 @@ function DiscussView({
   );
 }
 
-type OpenBriefRef = { messageId: string; key: string };
+type OpenBriefRef = { messageId: string; key: string; from: "consult" | "discuss" };
+
+function emptyThread(root: ThreadMessage, brief?: SavedBrief | null): DiscussThread {
+  return {
+    rootAnswerId: root.id,
+    rootPreview: previewOf(root.content),
+    messages: [],
+    notes: seedNotesFromAnswer(root.content, brief ?? null),
+    chips: DISCUSS_CHIPS,
+  };
+}
 
 export default function Home() {
   const [input, setInput] = useState("");
   const [messages, setMessages] = useState<ThreadMessage[]>([]);
+  const [threads, setThreads] = useState<Record<string, DiscussThread>>({});
+  const [mode, setMode] = useState<AppMode>("consult");
+  const [activeRootId, setActiveRootId] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelHint, setModelHint] = useState<string | null>(null);
 
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
-  const [rootedFromId, setRootedFromId] = useState<string | null>(null);
-  const [chips, setChips] = useState<Hook[]>(DISCUSS_CHIPS);
-  const [notes, setNotes] = useState<WorkingNotes>(() => emptyNotes());
   const [tightenTip, setTightenTip] = useState<string | null>(null);
-  /** Actively updating the Discuss pane while chatting. */
-  const [discussing, setDiscussing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+
+  const activeThread = activeRootId ? threads[activeRootId] ?? null : null;
+  const inDiscuss = mode === "discuss" && activeThread != null;
 
   useEffect(() => {
     const saved = loadSession();
     if (saved) {
       setMessages(saved.messages);
-      setNotes(saved.notes ?? emptyNotes());
-      setChips(saved.chips?.length ? saved.chips : DISCUSS_CHIPS);
-      setRootedFromId(saved.rootedFromId);
-      setDiscussing(Boolean(saved.discussing));
-      // Only reopen the discuss pane if we were actively discussing.
-      if (saved.discussing && saved.sideKind === "discuss") {
-        setSideKind("discuss");
+      setThreads(saved.threads);
+      const canDiscuss =
+        saved.mode === "discuss" &&
+        saved.activeRootId != null &&
+        Boolean(saved.threads[saved.activeRootId]);
+      if (canDiscuss) {
+        setMode("discuss");
+        setActiveRootId(saved.activeRootId);
+        setSideKind(saved.sideKind === "brief" ? "brief" : "memo");
+      } else {
+        setMode("consult");
+        setActiveRootId(null);
+        setSideKind(saved.sideKind === "brief" ? "brief" : null);
       }
     }
     setHydrated(true);
@@ -300,40 +332,62 @@ export default function Home() {
     if (!hydrated) return;
     saveSession({
       messages,
-      notes,
-      chips,
-      rootedFromId,
-      discussing,
-      sideKind: sideKind === "discuss" ? "discuss" : null,
+      threads,
+      mode: inDiscuss ? "discuss" : "consult",
+      activeRootId: inDiscuss ? activeRootId : null,
+      sideKind:
+        sideKind === "brief"
+          ? "brief"
+          : inDiscuss
+            ? "memo"
+            : null,
     });
-  }, [messages, notes, chips, rootedFromId, discussing, sideKind, hydrated]);
+  }, [messages, threads, mode, activeRootId, sideKind, hydrated, inDiscuss]);
+
+  const visibleMessages = inDiscuss ? activeThread!.messages : messages;
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
-  }, [messages, busy]);
+  }, [visibleMessages, busy, mode]);
 
-  const hasDiscuss = !notesAreEmpty(notes);
-  const discussVisible = sideKind === "discuss" && hasDiscuss;
-  const showDiscussDock = hasDiscuss && sideKind !== "discuss";
+  const rootAnswer = useMemo(() => {
+    if (!activeRootId) return null;
+    return messages.find((m) => m.id === activeRootId) ?? null;
+  }, [messages, activeRootId]);
 
   const activeBrief = useMemo(() => {
     if (!openBrief) return null;
-    const msg = messages.find((m) => m.id === openBrief.messageId);
+    const pool =
+      openBrief.from === "discuss" && activeThread
+        ? activeThread.messages
+        : messages;
+    const msg = pool.find((m) => m.id === openBrief.messageId);
     const brief = msg?.briefs?.[openBrief.key];
     if (!msg || !brief) return null;
     return { message: msg, brief, key: openBrief.key };
-  }, [openBrief, messages]);
+  }, [openBrief, messages, activeThread]);
 
-  const showSidePane =
-    (sideKind === "brief" && activeBrief !== null) || discussVisible;
+  const showMemoPane = inDiscuss && sideKind === "memo";
+  const showBriefPane = sideKind === "brief" && activeBrief !== null;
+  const showSidePane = showMemoPane || showBriefPane;
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
+
+  function patchThread(
+    rootId: string,
+    updater: (prev: DiscussThread) => DiscussThread,
+  ) {
+    setThreads((prev) => {
+      const current = prev[rootId];
+      if (!current) return prev;
+      return { ...prev, [rootId]: updater(current) };
+    });
+  }
 
   function clearSession() {
     setMessages([]);
-    setNotes(emptyNotes());
-    setChips(DISCUSS_CHIPS);
-    setRootedFromId(null);
-    setDiscussing(false);
+    setThreads({});
+    setMode("consult");
+    setActiveRootId(null);
     setSideKind(null);
     setOpenBrief(null);
     setTightenTip(null);
@@ -346,25 +400,37 @@ export default function Home() {
     }
   }
 
-  function hidePane() {
+  function backToConsult() {
+    setMode("consult");
+    setActiveRootId(null);
     setOpenBrief(null);
     setSideKind(null);
-  }
-
-  function showDiscussPane() {
-    setOpenBrief(null);
-    setSideKind("discuss");
-  }
-
-  function doneDiscussing() {
-    setDiscussing(false);
-    setSideKind(null);
-    setOpenBrief(null);
+    setTightenTip(null);
     setModelHint(null);
+    setError(null);
   }
 
-  function openSavedBrief(messageId: string, key: string) {
-    setOpenBrief({ messageId, key });
+  function hideSidePane() {
+    setOpenBrief(null);
+    if (inDiscuss && sideKind === "brief") {
+      setSideKind("memo");
+      return;
+    }
+    // Hide memo (or close brief in consult) — stay in current mode.
+    setSideKind(null);
+  }
+
+  function showMemo() {
+    setOpenBrief(null);
+    setSideKind("memo");
+  }
+
+  function openSavedBrief(
+    messageId: string,
+    key: string,
+    from: "consult" | "discuss",
+  ) {
+    setOpenBrief({ messageId, key, from });
     setSideKind("brief");
   }
 
@@ -372,48 +438,59 @@ export default function Home() {
     messageId: string,
     key: string,
     brief: SavedBrief,
+    from: "consult" | "discuss",
   ) {
-    setMessages((prev) =>
-      prev.map((m) =>
-        m.id === messageId
-          ? { ...m, briefs: { ...(m.briefs ?? {}), [key]: brief } }
-          : m,
-      ),
-    );
-    setOpenBrief({ messageId, key });
+    if (from === "discuss" && activeRootId) {
+      patchThread(activeRootId, (t) => ({
+        ...t,
+        messages: t.messages.map((m) =>
+          m.id === messageId
+            ? { ...m, briefs: { ...(m.briefs ?? {}), [key]: brief } }
+            : m,
+        ),
+      }));
+    } else {
+      setMessages((prev) =>
+        prev.map((m) =>
+          m.id === messageId
+            ? { ...m, briefs: { ...(m.briefs ?? {}), [key]: brief } }
+            : m,
+        ),
+      );
+    }
+    setOpenBrief({ messageId, key, from });
     setSideKind("brief");
   }
 
   /**
-   * Start or reopen Discuss.
-   * - Same rooted answer → reopen existing memo (no wipe)
-   * - Different answer → start a fresh memo from that answer
+   * Enter Discuss mode on an answer.
+   * Creates a branch if needed; otherwise reopens the existing timeline.
    */
-  function startDiscuss(msg: ThreadMessage) {
+  function enterDiscuss(msg: ThreadMessage, opts?: { reseeds?: boolean }) {
     const preferredKey =
       (openBrief?.messageId === msg.id ? openBrief.key : null) ??
       (msg.briefs?.[FULL_BRIEF_KEY] ? FULL_BRIEF_KEY : null) ??
       Object.keys(msg.briefs ?? {})[0] ??
       null;
     const brief = preferredKey ? msg.briefs?.[preferredKey] : null;
-    const switchingTopic = rootedFromId != null && rootedFromId !== msg.id;
-    const shouldSeed =
-      notesAreEmpty(notes) || switchingTopic || rootedFromId === null;
 
-    if (shouldSeed) {
-      setNotes(seedNotesFromAnswer(msg.content, brief ?? null));
-      setTightenTip(null);
-      setChips(DISCUSS_CHIPS);
-      setRootedFromId(msg.id);
-    }
+    setThreads((prev) => {
+      const existing = prev[msg.id];
+      if (existing && !opts?.reseeds) return prev;
+      return {
+        ...prev,
+        [msg.id]: emptyThread(msg, brief ?? null),
+      };
+    });
 
-    setMessages((prev) =>
-      prev.map((m) => (m.id === msg.id ? { ...m, promoted: true } : m)),
-    );
-    setDiscussing(true);
+    setMode("discuss");
+    setActiveRootId(msg.id);
     setOpenBrief(null);
-    setSideKind("discuss");
+    setSideKind("memo");
+    setTightenTip(null);
     setModelHint(null);
+    setError(null);
+    setInput("");
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -469,40 +546,66 @@ export default function Home() {
     if (!question || busy) return;
     setError(null);
     setInput("");
+
     const userMsg: ThreadMessage = {
       id: uid(),
       role: "user",
       content: question,
     };
-    const nextThread = [...messages, userMsg];
-    setMessages(nextThread);
+
     setBusy(true);
     try {
-      if (discussing && hasDiscuss) {
+      if (inDiscuss && activeRootId && activeThread) {
+        const prior = activeThread.messages;
+        const nextThreadMsgs = [...prior, userMsg];
+        patchThread(activeRootId, (t) => ({
+          ...t,
+          messages: nextThreadMsgs,
+        }));
         if (sideKind === "brief") {
           setOpenBrief(null);
-          setSideKind("discuss");
+          setSideKind("memo");
         }
-        const data = await sendDiscuss(question, messages, notes);
-        setNotes(data.notes);
-        setTightenTip(null);
-        if (data.hooks?.length) setChips(data.hooks);
-        setMessages([
-          ...nextThread,
+
+        // Include root answer as context for the model.
+        const historyForModel: ThreadMessage[] = [
           {
-            id: uid(),
+            id: `root-${activeRootId}`,
             role: "assistant",
-            // Keep confidence so Elaborate stays available on short answers.
-            confidence: "medium",
-            content: data.reply,
-            hooks: data.hooks,
-            briefs: {},
+            content: rootAnswer?.content ?? activeThread.rootPreview,
           },
-        ]);
+          ...prior,
+        ];
+        const data = await sendDiscuss(
+          question,
+          historyForModel,
+          activeThread.notes,
+        );
+        patchThread(activeRootId, (t) => ({
+          ...t,
+          notes: data.notes,
+          chips: data.hooks?.length ? data.hooks : t.chips,
+          rootPreview: t.rootPreview,
+          messages: [
+            ...t.messages.filter((m) => m.id !== userMsg.id),
+            userMsg,
+            {
+              id: uid(),
+              role: "assistant",
+              confidence: "medium",
+              content: data.reply,
+              hooks: data.hooks,
+              briefs: {},
+            },
+          ],
+        }));
+        setTightenTip(null);
       } else {
+        const nextSpine = [...messages, userMsg];
+        setMessages(nextSpine);
         const data = await sendConsult(question, messages);
         setMessages([
-          ...nextThread,
+          ...nextSpine,
           {
             id: uid(),
             role: "assistant",
@@ -522,20 +625,25 @@ export default function Home() {
 
   async function onElaborate(msg: ThreadMessage, hook?: Hook) {
     if (busy) return;
+    const from: "consult" | "discuss" = inDiscuss ? "discuss" : "consult";
     const key = briefKeyFor(hook);
     const existing = msg.briefs?.[key];
     if (existing) {
-      openSavedBrief(msg.id, key);
+      openSavedBrief(msg.id, key, from);
       return;
     }
 
     setBusy(true);
     setError(null);
     try {
-      const idx = messages.findIndex((m) => m.id === msg.id);
-      const prior = messages.slice(0, idx + 1);
+      const pool = inDiscuss && activeThread ? activeThread.messages : messages;
+      const idx = pool.findIndex((m) => m.id === msg.id);
+      const prior = idx >= 0 ? pool.slice(0, idx + 1) : [msg];
       const priorUser = [...prior].reverse().find((m) => m.role === "user");
-      const question = priorUser?.content ?? msg.content;
+      const question =
+        priorUser?.content ??
+        (inDiscuss ? activeThread?.notes.topic : undefined) ??
+        msg.content;
       const history = prior.map((m) => ({
         role: m.role,
         content: m.content,
@@ -552,11 +660,16 @@ export default function Home() {
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brief failed");
-      saveBriefOnMessage(msg.id, key, {
-        title: hook?.label ?? "Elaborate",
-        markdown: data.markdown,
-        hookId: hook?.id,
-      });
+      saveBriefOnMessage(
+        msg.id,
+        key,
+        {
+          title: hook?.label ?? "Elaborate",
+          markdown: data.markdown,
+          hookId: hook?.id,
+        },
+        from,
+      );
       setModelHint(
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
@@ -568,20 +681,24 @@ export default function Home() {
   }
 
   async function onCleanUp() {
-    if (busy || (!notes.whereWeAre && !notes.topic)) return;
+    if (!activeThread || busy) return;
+    if (!activeThread.notes.whereWeAre && !activeThread.notes.topic) return;
     setBusy(true);
     setError(null);
     try {
       const res = await fetch("/api/compact", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ notes }),
+        body: JSON.stringify({ notes: activeThread.notes }),
       });
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Clean up failed");
-      setNotes(data.notes);
+      if (activeRootId) {
+        patchThread(activeRootId, (t) => ({ ...t, notes: data.notes }));
+      }
       setTightenTip(data.note);
-      setSideKind("discuss");
+      setSideKind("memo");
+      setOpenBrief(null);
       setModelHint(
         data.mocked ? `mock · fallback` : data.modelUsed || "gemini-3.8-flash",
       );
@@ -593,56 +710,247 @@ export default function Home() {
   }
 
   function onHookClick(msg: ThreadMessage, hook: Hook) {
-    // Discuss follow-up chips → send as chat. Consult drill chips → elaborate.
-    const isDiscussFollowUp =
-      discussing &&
-      (msg.confidence == null ||
-        DISCUSS_CHIPS.some((c) => c.id === hook.id) ||
-        chips.some((c) => c.id === hook.id && c.label === hook.label));
-
-    // If this hook came from a consult answer's own hooks, prefer elaborate.
-    if (msg.confidence != null && msg.hooks?.some((h) => h.id === hook.id)) {
-      void onElaborate(msg, hook);
-      return;
-    }
-    if (isDiscussFollowUp || (discussing && msg.confidence == null)) {
+    if (inDiscuss) {
+      // Discuss follow-up chips → send in discuss timeline.
+      // Consult-style hooks on a reply → elaborate.
+      if (msg.hooks?.some((h) => h.id === hook.id) && msg.confidence != null) {
+        // Prefer discuss chips over elaborate when id matches DISCUSS_CHIPS.
+        const isDiscussChip =
+          DISCUSS_CHIPS.some((c) => c.id === hook.id) ||
+          activeThread?.chips.some(
+            (c) => c.id === hook.id && c.label === hook.label,
+          );
+        if (isDiscussChip) {
+          void onSubmit(hook.label);
+          return;
+        }
+        void onElaborate(msg, hook);
+        return;
+      }
       void onSubmit(hook.label);
       return;
     }
     void onElaborate(msg, hook);
   }
 
+  function renderMessageActions(msg: ThreadMessage) {
+    if (msg.role !== "assistant") return null;
+    const savedEntries = Object.entries(msg.briefs ?? {});
+    const isBriefSource =
+      sideKind === "brief" && openBrief?.messageId === msg.id;
+    const branch = !inDiscuss ? threads[msg.id] : undefined;
+    const hasBranch = Boolean(branch);
+    const turns = branch ? turnCount(branch) : 0;
+
+    return (
+      <div className="flex max-w-[95%] flex-col gap-1.5">
+        <div className="flex flex-wrap items-center gap-1.5">
+          {msg.confidence ? (
+            <Badge>confidence · {msg.confidence}</Badge>
+          ) : null}
+
+          {(msg.hooks?.length
+            ? msg.hooks
+            : inDiscuss
+              ? activeThread?.chips
+              : undefined
+          )?.map((hook) => {
+            const saved = msg.briefs?.[hook.id];
+            const isOpen =
+              openBrief?.messageId === msg.id && openBrief.key === hook.id;
+            return (
+              <button
+                key={hook.id}
+                type="button"
+                disabled={busy}
+                onClick={() => onHookClick(msg, hook)}
+                className={cn(
+                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                  saved
+                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                  isOpen && "ring-2 ring-zinc-400 ring-offset-1",
+                )}
+              >
+                {saved ? (
+                  <span className="inline-flex items-center gap-1">
+                    <FileText className="h-3 w-3" />
+                    {hook.label}
+                  </span>
+                ) : (
+                  hook.label
+                )}
+              </button>
+            );
+          })}
+
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void onElaborate(msg)}
+            className={cn(
+              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+              msg.briefs?.[FULL_BRIEF_KEY]
+                ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
+            )}
+          >
+            {msg.briefs?.[FULL_BRIEF_KEY] ? (
+              <>
+                <FileText className="h-3 w-3" />
+                View brief
+              </>
+            ) : (
+              <>
+                <Maximize2 className="h-3 w-3" />
+                Elaborate
+              </>
+            )}
+          </button>
+
+          {!inDiscuss ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => enterDiscuss(msg)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                hasBranch
+                  ? "border-amber-600 bg-amber-600 text-white"
+                  : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100",
+              )}
+              title={
+                hasBranch
+                  ? "Reopen this Discuss branch"
+                  : "Enter Discuss on this answer"
+              }
+            >
+              <MessageSquare className="h-3 w-3" />
+              {hasBranch ? "Reopen discuss" : "Discuss"}
+            </button>
+          ) : null}
+        </div>
+
+        {!inDiscuss && hasBranch ? (
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => enterDiscuss(msg)}
+            className={cn(
+              "flex w-fit max-w-full flex-col gap-0.5 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 text-left transition hover:bg-amber-100 dark:border-amber-900 dark:bg-amber-950/40 dark:hover:bg-amber-950/70",
+              isBriefSource && "ring-2 ring-zinc-400",
+            )}
+          >
+            <span className="inline-flex items-center gap-1.5 text-[11px] font-semibold text-amber-950 dark:text-amber-100">
+              <MessageSquare className="h-3 w-3" />
+              Discussed
+              {turns > 0 ? ` · ${turns} turn${turns === 1 ? "" : "s"}` : ""}
+              <span className="font-medium text-amber-800/80 dark:text-amber-200/80">
+                · Reopen
+              </span>
+            </span>
+            <span className="truncate text-[11px] text-amber-900/80 dark:text-amber-200/70">
+              {branch!.notes.topic || previewOf(branch!.rootPreview, 80)}
+              {branch!.notes.agreed[0]
+                ? ` · Settled: ${previewOf(branch!.notes.agreed[0], 60)}`
+                : ""}
+            </span>
+          </button>
+        ) : null}
+
+        {savedEntries.length > 1 ? (
+          <div className="flex flex-wrap gap-1">
+            {savedEntries.map(([key, brief]) => (
+              <button
+                key={key}
+                type="button"
+                onClick={() =>
+                  openSavedBrief(msg.id, key, inDiscuss ? "discuss" : "consult")
+                }
+                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
+              >
+                <ChevronRight className="h-3 w-3" />
+                {brief.title}
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    );
+  }
+
   return (
-    <div className="flex h-dvh flex-col overflow-hidden bg-zinc-50 text-zinc-900 dark:bg-zinc-950 dark:text-zinc-50">
-      <header className="shrink-0 border-b border-zinc-200 bg-white/80 backdrop-blur dark:border-zinc-800 dark:bg-zinc-950/80">
+    <div
+      className={cn(
+        "flex h-dvh flex-col overflow-hidden text-zinc-900 dark:text-zinc-50",
+        inDiscuss
+          ? "bg-amber-50/40 dark:bg-zinc-950"
+          : "bg-zinc-50 dark:bg-zinc-950",
+      )}
+    >
+      <header
+        className={cn(
+          "shrink-0 border-b backdrop-blur",
+          inDiscuss
+            ? "border-amber-200 bg-amber-50/90 dark:border-amber-900 dark:bg-amber-950/40"
+            : "border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/80",
+        )}
+      >
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
           <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-zinc-500" />
+              {inDiscuss ? (
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  onClick={backToConsult}
+                  className="shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+                >
+                  <ArrowLeft className="h-3.5 w-3.5" />
+                  Consult
+                </Button>
+              ) : (
+                <Sparkles className="h-4 w-4 text-zinc-500" />
+              )}
               <h1 className="truncate text-sm font-semibold tracking-tight">
-                Two-lane LLM demo
+                {inDiscuss
+                  ? activeThread?.notes.topic || "Discuss"
+                  : "Two-lane LLM demo"}
               </h1>
-              {discussing ? (
-                <Badge className="border-amber-300 bg-amber-50 text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
-                  discussing
+              {inDiscuss ? (
+                <Badge className="border-amber-300 bg-white text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
+                  discuss mode
                 </Badge>
               ) : null}
             </div>
-            <p className="mt-0.5 text-xs text-zinc-500">
-              Consult for short answers. Discuss to converge together — Hide or
-              Done anytime; New chat clears the slate.
+            <p className="mt-0.5 truncate text-xs text-zinc-500">
+              {inDiscuss
+                ? `Branch on: ${previewOf(rootAnswer?.content ?? activeThread?.rootPreview ?? "", 100)}`
+                : "Consult for short answers. Discuss opens a separate timeline on one answer."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {modelHint ? (
               <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
             ) : null}
+            {inDiscuss ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={backToConsult}
+                title="Return to consult spine. Discuss branch is kept."
+              >
+                Done
+              </Button>
+            ) : null}
             <Button
               type="button"
               variant="outline"
               size="sm"
               onClick={clearSession}
-              title="Clear chat and discuss memo"
+              title="Clear consult and all Discuss branches"
             >
               <Plus className="h-3.5 w-3.5" />
               New chat
@@ -667,7 +975,7 @@ export default function Home() {
           )}
         >
           <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-            {messages.length === 0 ? (
+            {!inDiscuss && messages.length === 0 ? (
               <div
                 className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
               >
@@ -676,8 +984,8 @@ export default function Home() {
                     Ask something operational
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    Short answers first. Elaborate for a brief. Discuss when you
-                    want to converge on a shared picture beside the chat.
+                    Short answers stay on this spine. Elaborate opens a brief.
+                    Discuss switches into a separate timeline on one answer.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -695,12 +1003,28 @@ export default function Home() {
               </div>
             ) : (
               <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
-                {messages.map((msg) => {
-                  const savedEntries = Object.entries(msg.briefs ?? {});
+                {inDiscuss ? (
+                  <div className="rounded-2xl border border-amber-200 bg-white/80 px-3.5 py-3 shadow-sm dark:border-amber-900 dark:bg-zinc-900/80">
+                    <p className="text-[11px] font-semibold uppercase tracking-wide text-amber-800 dark:text-amber-200">
+                      Root answer
+                    </p>
+                    <p className="mt-1 text-sm leading-relaxed text-zinc-800 dark:text-zinc-100">
+                      {rootAnswer?.content ?? activeThread?.rootPreview}
+                    </p>
+                    {activeThread && turnCount(activeThread) === 0 ? (
+                      <p className="mt-2 text-xs text-zinc-500">
+                        Ask a follow-up — this timeline stays separate from
+                        Consult.
+                      </p>
+                    ) : null}
+                  </div>
+                ) : null}
+
+                {visibleMessages.map((msg) => {
                   const isBriefSource =
                     sideKind === "brief" && openBrief?.messageId === msg.id;
-                  const isRootSource = rootedFromId === msg.id;
-                  const isAssistant = msg.role === "assistant";
+                  const isRootInConsult =
+                    !inDiscuss && Boolean(threads[msg.id]);
 
                   return (
                     <div
@@ -718,128 +1042,12 @@ export default function Home() {
                             : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
                           isBriefSource &&
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
-                          isRootSource &&
-                            hasDiscuss &&
-                            "ring-2 ring-amber-500/60",
+                          isRootInConsult && "ring-2 ring-amber-500/50",
                         )}
                       >
                         {msg.content}
                       </div>
-
-                      {isAssistant ? (
-                        <div className="flex max-w-[95%] flex-col gap-1.5">
-                          <div className="flex flex-wrap items-center gap-1.5">
-                            {msg.confidence ? (
-                              <Badge>confidence · {msg.confidence}</Badge>
-                            ) : null}
-
-                            {(msg.hooks?.length
-                              ? msg.hooks
-                              : discussing
-                                ? chips
-                                : undefined
-                            )?.map((hook) => {
-                              const saved = msg.briefs?.[hook.id];
-                              const isOpen =
-                                openBrief?.messageId === msg.id &&
-                                openBrief.key === hook.id;
-                              return (
-                                <button
-                                  key={hook.id}
-                                  type="button"
-                                  disabled={busy}
-                                  onClick={() => onHookClick(msg, hook)}
-                                  className={cn(
-                                    "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                    saved
-                                      ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
-                                    isOpen &&
-                                      "ring-2 ring-zinc-400 ring-offset-1",
-                                  )}
-                                >
-                                  {saved ? (
-                                    <span className="inline-flex items-center gap-1">
-                                      <FileText className="h-3 w-3" />
-                                      {hook.label}
-                                    </span>
-                                  ) : (
-                                    hook.label
-                                  )}
-                                </button>
-                              );
-                            })}
-
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => void onElaborate(msg)}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                msg.briefs?.[FULL_BRIEF_KEY]
-                                  ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                  : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
-                              )}
-                            >
-                              {msg.briefs?.[FULL_BRIEF_KEY] ? (
-                                <>
-                                  <FileText className="h-3 w-3" />
-                                  View brief
-                                </>
-                              ) : (
-                                <>
-                                  <Maximize2 className="h-3 w-3" />
-                                  Elaborate
-                                </>
-                              )}
-                            </button>
-
-                            <button
-                              type="button"
-                              disabled={busy}
-                              onClick={() => startDiscuss(msg)}
-                              className={cn(
-                                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                hasDiscuss && rootedFromId === msg.id
-                                  ? "border-amber-600 bg-amber-600 text-white"
-                                  : "border-amber-700/80 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-500 dark:bg-amber-950/40 dark:text-amber-100",
-                              )}
-                              title={
-                                hasDiscuss && rootedFromId === msg.id
-                                  ? "Show this Discuss pane"
-                                  : hasDiscuss
-                                    ? "Start Discuss from this answer (replaces the current memo)"
-                                    : "Open Discuss beside the chat"
-                              }
-                            >
-                              <MessageSquare className="h-3 w-3" />
-                              {hasDiscuss && rootedFromId === msg.id
-                                ? discussing
-                                  ? "Show discuss"
-                                  : "Resume discuss"
-                                : hasDiscuss
-                                  ? "Discuss from here"
-                                  : "Discuss"}
-                            </button>
-                          </div>
-
-                          {savedEntries.length > 1 ? (
-                            <div className="flex flex-wrap gap-1">
-                              {savedEntries.map(([key, brief]) => (
-                                <button
-                                  key={key}
-                                  type="button"
-                                  onClick={() => openSavedBrief(msg.id, key)}
-                                  className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-                                >
-                                  <ChevronRight className="h-3 w-3" />
-                                  {brief.title}
-                                </button>
-                              ))}
-                            </div>
-                          ) : null}
-                        </div>
-                      ) : null}
+                      {renderMessageActions(msg)}
                     </div>
                   );
                 })}
@@ -855,50 +1063,52 @@ export default function Home() {
             )}
           </ScrollArea>
 
-          <div className="shrink-0 border-t border-zinc-200 bg-white p-3 dark:border-zinc-800 dark:bg-zinc-950">
+          <div
+            className={cn(
+              "shrink-0 border-t p-3",
+              inDiscuss
+                ? "border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30"
+                : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
+            )}
+          >
             {error ? (
               <p className="mb-2 text-xs text-red-600 dark:text-red-400">
                 {error}
               </p>
             ) : null}
 
-            {showDiscussDock ? (
-              <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2 rounded-xl border border-amber-200 bg-amber-50 px-3 py-2 dark:border-amber-900 dark:bg-amber-950/50">
+            {inDiscuss && activeThread && !showMemoPane ? (
+              <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2 rounded-xl border border-amber-200 bg-white px-3 py-2 dark:border-amber-900 dark:bg-amber-950/50">
                 <MessageSquare className="h-3.5 w-3.5 shrink-0 text-amber-800 dark:text-amber-200" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold text-amber-950 dark:text-amber-100">
-                    Discuss · {notes.topic || "current topic"}
+                    Memo hidden · {activeThread.notes.topic || "this branch"}
                   </p>
                   <p className="truncate text-[11px] text-amber-800/80 dark:text-amber-200/80">
-                    {discussing
-                      ? "Hidden while you chat — still updating as you go"
-                      : "Paused. Chat is normal — open anytime to continue"}
+                    Still in Discuss — consult spine stays clean
                   </p>
                 </div>
                 <Button
                   type="button"
                   size="sm"
                   variant="outline"
-                  className="shrink-0 border-amber-300 bg-white text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
-                  onClick={() => {
-                    if (!discussing) setDiscussing(true);
-                    showDiscussPane();
-                  }}
+                  className="shrink-0 border-amber-300 bg-amber-50 text-amber-950 hover:bg-amber-100 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100"
+                  onClick={showMemo}
                 >
-                  {discussing ? "Show" : "Open"}
+                  Show memo
                 </Button>
               </div>
             ) : null}
 
-            {discussing && hasDiscuss ? (
+            {inDiscuss && activeThread ? (
               <div className="mx-auto mb-2 flex max-w-lg flex-wrap gap-1.5">
-                {chips.map((hook) => (
+                {activeThread.chips.map((hook) => (
                   <button
                     key={hook.id}
                     type="button"
                     disabled={busy}
                     onClick={() => void onSubmit(hook.label)}
-                    className="rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
+                    className="rounded-full border border-amber-200 bg-white px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900 dark:bg-amber-950/40 dark:text-amber-100"
                   >
                     {hook.label}
                   </button>
@@ -924,13 +1134,13 @@ export default function Home() {
                 }}
                 rows={2}
                 placeholder={
-                  discussing
-                    ? "Keep talking — Discuss updates beside the chat…"
+                  inDiscuss
+                    ? "Discuss this answer — stays off the consult spine…"
                     : "Ask a consult question…"
                 }
                 className={cn(
-                  "min-h-[44px] flex-1 resize-none rounded-xl border bg-zinc-50 px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
-                  discussing
+                  "min-h-[44px] flex-1 resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
+                  inDiscuss
                     ? "border-amber-200 dark:border-amber-900"
                     : "border-zinc-200 dark:border-zinc-700",
                 )}
@@ -952,95 +1162,84 @@ export default function Home() {
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">
-                  {sideKind === "brief" && activeBrief
+                  {showBriefPane && activeBrief
                     ? `Brief · ${activeBrief.brief.title}`
-                    : "Discuss"}
+                    : "Discuss memo"}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  {sideKind === "brief"
+                  {showBriefPane
                     ? "Snapshot of one answer"
-                    : discussing
-                      ? "Converging together — Hide or Done anytime"
-                      : "Paused — Resume to keep updating"}
+                    : "Updates as you talk in this branch"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                {sideKind === "discuss" ? (
+                {showMemoPane && activeThread ? (
                   <>
                     <Button
                       type="button"
                       variant="outline"
                       size="sm"
-                      disabled={busy || (!notes.whereWeAre && !notes.topic)}
+                      disabled={
+                        busy ||
+                        (!activeThread.notes.whereWeAre &&
+                          !activeThread.notes.topic)
+                      }
                       onClick={() => void onCleanUp()}
                     >
                       Clean up
                     </Button>
-                    {discussing ? (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={doneDiscussing}
-                        title="Stop Discuss updates. Chat goes normal. Memo is kept."
-                      >
-                        Done
-                      </Button>
-                    ) : (
-                      <Button
-                        type="button"
-                        variant="outline"
-                        size="sm"
-                        onClick={() => setDiscussing(true)}
-                      >
-                        Resume
-                      </Button>
-                    )}
-                    {rootedFromId ? (
+                    {rootAnswer ? (
                       <Button
                         type="button"
                         variant="ghost"
                         size="sm"
                         disabled={busy}
-                        title="Replace this Discuss memo from the original answer"
-                        onClick={() => {
-                          const root = messages.find((m) => m.id === rootedFromId);
-                          if (!root) return;
-                          setNotes(seedNotesFromAnswer(root.content, null));
-                          setTightenTip(null);
-                          setChips(DISCUSS_CHIPS);
-                          setDiscussing(true);
-                          setSideKind("discuss");
-                        }}
+                        title="Wipe this Discuss branch and start fresh from the root answer"
+                        onClick={() => enterDiscuss(rootAnswer, { reseeds: true })}
                       >
                         Start over
                       </Button>
                     ) : null}
                   </>
                 ) : null}
+                {showBriefPane && inDiscuss ? (
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => {
+                      setOpenBrief(null);
+                      setSideKind("memo");
+                    }}
+                  >
+                    Back to memo
+                  </Button>
+                ) : null}
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={hidePane}
+                  onClick={hideSidePane}
                   title={
-                    sideKind === "discuss"
-                      ? "Hide Discuss (keeps everything)"
-                      : "Close brief"
+                    showBriefPane
+                      ? inDiscuss
+                        ? "Close brief (stay in Discuss)"
+                        : "Close brief"
+                      : "Hide memo (stay in Discuss)"
                   }
                 >
                   <X className="h-4 w-4" />
                   <span className="ml-1 hidden sm:inline">
-                    {sideKind === "discuss" ? "Hide" : "Close"}
+                    {showBriefPane ? "Close" : "Hide"}
                   </span>
                 </Button>
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-              {sideKind === "brief" && activeBrief ? (
+              {showBriefPane && activeBrief ? (
                 <SimpleMarkdown text={activeBrief.brief.markdown} />
-              ) : sideKind === "discuss" ? (
-                <DiscussView notes={notes} tip={tightenTip} />
+              ) : showMemoPane && activeThread ? (
+                <DiscussView notes={activeThread.notes} tip={tightenTip} />
               ) : null}
             </ScrollArea>
           </section>
