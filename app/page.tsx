@@ -512,6 +512,7 @@ export default function Home() {
       answer: string;
       confidence: ThreadMessage["confidence"];
       hooks: Hook[];
+      angles?: Hook[];
     };
   }
 
@@ -612,6 +613,7 @@ export default function Home() {
             content: data.answer,
             confidence: data.confidence,
             hooks: data.hooks,
+            angles: data.angles ?? [],
             briefs: {},
           },
         ]);
@@ -709,28 +711,10 @@ export default function Home() {
     }
   }
 
-  function onHookClick(msg: ThreadMessage, hook: Hook) {
-    if (inDiscuss) {
-      // Discuss follow-up chips → send in discuss timeline.
-      // Consult-style hooks on a reply → elaborate.
-      if (msg.hooks?.some((h) => h.id === hook.id) && msg.confidence != null) {
-        // Prefer discuss chips over elaborate when id matches DISCUSS_CHIPS.
-        const isDiscussChip =
-          DISCUSS_CHIPS.some((c) => c.id === hook.id) ||
-          activeThread?.chips.some(
-            (c) => c.id === hook.id && c.label === hook.label,
-          );
-        if (isDiscussChip) {
-          void onSubmit(hook.label);
-          return;
-        }
-        void onElaborate(msg, hook);
-        return;
-      }
-      void onSubmit(hook.label);
-      return;
-    }
-    void onElaborate(msg, hook);
+  function onHookClick(_msg: ThreadMessage, hook: Hook) {
+    // Spine hooks = consult follow-ups. Discuss chips = branch follow-ups.
+    // Angled elaborates live inside the brief pane, not on the spine.
+    void onSubmit(hook.label);
   }
 
   function renderMessageActions(msg: ThreadMessage) {
@@ -754,35 +738,17 @@ export default function Home() {
             : inDiscuss
               ? activeThread?.chips
               : undefined
-          )?.map((hook) => {
-            const saved = msg.briefs?.[hook.id];
-            const isOpen =
-              openBrief?.messageId === msg.id && openBrief.key === hook.id;
-            return (
-              <button
-                key={hook.id}
-                type="button"
-                disabled={busy}
-                onClick={() => onHookClick(msg, hook)}
-                className={cn(
-                  "rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                  saved
-                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                    : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
-                  isOpen && "ring-2 ring-zinc-400 ring-offset-1",
-                )}
-              >
-                {saved ? (
-                  <span className="inline-flex items-center gap-1">
-                    <FileText className="h-3 w-3" />
-                    {hook.label}
-                  </span>
-                ) : (
-                  hook.label
-                )}
-              </button>
-            );
-          })}
+          )?.map((hook) => (
+            <button
+              key={hook.id}
+              type="button"
+              disabled={busy}
+              onClick={() => onHookClick(msg, hook)}
+              className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
+            >
+              {hook.label}
+            </button>
+          ))}
 
           <button
             type="button"
@@ -984,8 +950,9 @@ export default function Home() {
                     Ask something operational
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
-                    Short answers stay on this spine. Elaborate opens a brief.
-                    Discuss switches into a separate timeline on one answer.
+                    Short answers stay on this spine — chips ask follow-ups.
+                    Elaborate opens a brief with deeper angles. Discuss opens
+                    a separate timeline on one answer.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -1168,7 +1135,7 @@ export default function Home() {
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {showBriefPane
-                    ? "Snapshot of one answer"
+                    ? "Overview plus deeper angles on this answer"
                     : "Updates as you talk in this branch"}
                 </p>
               </div>
@@ -1237,7 +1204,68 @@ export default function Home() {
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
               {showBriefPane && activeBrief ? (
-                <SimpleMarkdown text={activeBrief.brief.markdown} />
+                <div className="space-y-4">
+                  {(() => {
+                    const src = activeBrief.message;
+                    const angles = src.angles ?? [];
+                    const fullSaved = Boolean(src.briefs?.[FULL_BRIEF_KEY]);
+                    const fullOpen = openBrief?.key === FULL_BRIEF_KEY;
+                    if (angles.length === 0 && !fullSaved) return null;
+                    return (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Angles
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void onElaborate(src)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                              fullOpen || (!openBrief?.key && fullSaved)
+                                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                                : fullSaved
+                                  ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                            )}
+                          >
+                            {fullSaved ? (
+                              <FileText className="h-3 w-3" />
+                            ) : null}
+                            Overview
+                          </button>
+                          {angles.map((angle) => {
+                            const saved = src.briefs?.[angle.id];
+                            const isOpen =
+                              openBrief?.messageId === src.id &&
+                              openBrief.key === angle.id;
+                            return (
+                              <button
+                                key={angle.id}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onElaborate(src, angle)}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                  isOpen
+                                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                                    : saved
+                                      ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                                )}
+                              >
+                                {saved ? <FileText className="h-3 w-3" /> : null}
+                                {angle.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <SimpleMarkdown text={activeBrief.brief.markdown} />
+                </div>
               ) : showMemoPane && activeThread ? (
                 <DiscussView notes={activeThread.notes} tip={tightenTip} />
               ) : null}

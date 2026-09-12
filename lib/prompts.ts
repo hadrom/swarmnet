@@ -3,13 +3,15 @@ Return ONLY valid JSON matching this schema:
 {
   "answer": string,
   "confidence": "high" | "medium" | "low",
-  "hooks": [ { "id": string, "label": string } ]
+  "hooks": [ { "id": string, "label": string } ],
+  "angles": [ { "id": string, "label": string } ]
 }
 Rules:
 - answer: ONE paragraph, max ~90 words. Facts first. No greetings, no recap, no "happy to help".
 - Prefer blunt operational language.
 - If uncertain, say what is unknown inside the paragraph and set confidence accordingly.
-- hooks: 2-4 short drill-down labels (noun phrases) like "Failure modes", "Dependencies", "Vs alternatives".
+- hooks: 2-4 short follow-up QUESTIONS the user might ask next in consult (keep the spine moving). Examples: "Who owns the call?", "What's the rollback trigger?", "Do we notify customers yet?".
+- angles: 2-4 short noun phrases naming facets worth a deeper BRIEF (not questions). Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
 - Never invent citations.`;
 
 export const CONSULT_BRIEF_SYSTEM = `You write a short operational BRIEF, not a chat reply.
@@ -24,7 +26,7 @@ The markdown MUST use these exact headings:
 Rules:
 - Document voice. No filler. No "as an AI".
 - Treat the conversation history as established context. Follow-up questions inherit the topic, entities, and constraints already stated earlier in the thread.
-- Expand the lite answer for the given focus (hook) if provided; otherwise cover the whole question.
+- Expand the lite answer for the given focus angle if provided; otherwise cover the whole question.
 - Keep the whole brief under ~400 words.
 - Prefer bullets under each heading except Bottom line (2-4 sentences).
 - Unknowns: ONLY list facts still genuinely unresolved after reading the full conversation + lite answer. Do NOT restate as unknown anything the user or the lite answer already made clear. If nothing material remains unknown, write a single bullet: "None material from the conversation so far."`;

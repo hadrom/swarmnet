@@ -12,6 +12,11 @@ export function mockLite(question: string): LiteResponse {
     answer: `Compressed take: treat this as a scoped decision, not a platform project. For “${short}${question.length > 80 ? "…" : ""}”, ship the smallest reversible step, name the owner, and set a kill criterion before expanding scope.`,
     confidence: "medium",
     hooks: [
+      { id: "owner", label: "Who owns the next call?" },
+      { id: "rollback", label: "What's the rollback trigger?" },
+      { id: "notify", label: "Do we notify customers yet?" },
+    ],
+    angles: [
       { id: "risks", label: "Failure modes" },
       { id: "deps", label: "Dependencies" },
       { id: "alt", label: "Vs alternatives" },

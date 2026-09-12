@@ -16,8 +16,8 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Consult
 
-- Short answers + drill chips on the main timeline
-- **Elaborate** opens a brief snapshot on the side (always available on assistant replies)
+- Short answers on the main spine; chips send **consult follow-ups** (stay on the spine)
+- **Elaborate** opens one brief on the side; deeper **angles** live as chips inside that brief
 
 ### Discuss (separate mode)
 
@@ -43,8 +43,8 @@ Persistence keeps **consult + discuss branches as one session** (`two-lane-sessi
 
 ## Demo script
 
-1. Click a starter (and maybe a second consult question).
-2. Optionally **Elaborate**.
+1. Click a starter (and maybe a chip follow-up on the spine).
+2. **Elaborate** — use angle chips inside the brief for scoped depth.
 3. Click **Discuss** — mode switch, separate timeline + memo.
 4. Ask a follow-up; watch the memo grow.
 5. **Done** → consult spine is still clean; reopen from the marker.

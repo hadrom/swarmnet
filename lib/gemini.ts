@@ -92,6 +92,7 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
     answer: String(raw.answer ?? ""),
     confidence,
     hooks: normalizeHooks(raw.hooks),
+    angles: normalizeHooks(raw.angles),
   };
 }
 
