@@ -32,7 +32,13 @@ import { cn } from "@/lib/utils";
 
 /** Full session — messages + discuss memo stay in sync. */
 const STORAGE_KEY = "two-lane-session-v3";
-const LEGACY_KEYS = ["two-lane-notepad-v2", "two-lane-working-notes-v1"];
+const LEGACY_KEYS = [
+  "two-lane-notepad-v2",
+  "two-lane-working-notes-v1",
+  "two-lane-working-notes-v1",
+  "two-lane-session-v1",
+  "two-lane-session-v2",
+];
 
 type SideKind = "brief" | "discuss";
 
