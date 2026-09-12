@@ -14,7 +14,7 @@ export type BriefResponse = {
 };
 
 /**
- * Shared notepad while chatting — what two people would jot to stay aligned.
+ * Living Discuss memo — shared understanding that grows as you talk.
  * Not a peer-review / debate scorecard.
  */
 export type WorkingNotes = {
@@ -58,13 +58,13 @@ export type ThreadMessage = {
   hooks?: Hook[];
   /** Saved elaborations for this answer. Key is hook id, or "full". */
   briefs?: Record<string, SavedBrief>;
-  /** True once this answer started a shared notepad. */
+  /** True once this answer rooted a Discuss memo. */
   promoted?: boolean;
 };
 
 export const FULL_BRIEF_KEY = "full";
 
-/** Soft follow-ups while jotting notes together. */
+/** Soft follow-ups while Discuss is active. */
 export const DISCUSS_CHIPS: Hook[] = [
   { id: "settled", label: "What have we settled?" },
   { id: "unsure", label: "What are we still unsure about?" },
@@ -128,8 +128,8 @@ export function seedNotesFromAnswer(
         : ["Anything we should settle before acting?"],
     trail: [
       brief
-        ? `Started jotting from the answer + brief “${brief.title}”`
-        : "Started jotting from this answer",
+        ? `Started Discuss from the answer + brief “${brief.title}”`
+        : "Started Discuss from this answer",
     ],
   };
 }
