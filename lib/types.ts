@@ -291,7 +291,30 @@ export function canvasConvergenceStatus(doc: CanvasDoc): {
 
 export type PromoteBriefMode = "bottom" | "unknowns" | "full";
 
-/** Fold an Elaborate brief into the canvas ledger (append under the right headings). */
+/** Insert HTML just before the end of an <h2>Section</h2>... block. */
+function injectUnderHeading(
+  bodyHtml: string,
+  heading: string,
+  injection: string,
+): string {
+  const re = new RegExp(
+    `(<h2[^>]*>\\s*${heading}\\s*<\\/h2>)([\\s\\S]*?)(?=<h2[^>]*>|$)`,
+    "i",
+  );
+  if (!re.test(bodyHtml)) {
+    return `${bodyHtml}<h2>${heading}</h2>${injection}`;
+  }
+  return bodyHtml.replace(re, (_m, h2: string, rest: string) => {
+    // Drop italic placeholders when real content arrives.
+    const cleaned = rest.replace(
+      /<li[^>]*>\s*<em[^>]*>[\s\S]*?<\/em>\s*<\/li>/gi,
+      "",
+    );
+    return `${h2}${cleaned}${injection}`;
+  });
+}
+
+/** Fold an Elaborate brief into the canvas ledger under the right headings. */
 export function promoteBriefIntoCanvas(
   doc: CanvasDoc,
   brief: SavedBrief,
@@ -316,32 +339,54 @@ export function promoteBriefIntoCanvas(
   const li = (items: string[]) =>
     items.map((i) => `<li>${escapeHtml(i)}</li>`).join("");
 
-  let html = "";
+  let bodyHtml = doc.bodyHtml;
+  let changed = false;
+
   if (mode === "bottom" || mode === "full") {
-    const text = bottom || brief.markdown.slice(0, 400);
+    const text = (bottom || brief.markdown.slice(0, 400)).replace(/\s+/g, " ").trim();
     if (text) {
-      html += `<h3>From brief · ${escapeHtml(brief.title)}</h3><p>${escapeHtml(text.replace(/\s+/g, " ").trim())}</p>`;
+      bodyHtml = injectUnderHeading(
+        bodyHtml,
+        "Bottom line",
+        `<p><strong>${escapeHtml(brief.title)}:</strong> ${escapeHtml(text)}</p>`,
+      );
+      changed = true;
     }
   }
   if (mode === "unknowns" || mode === "full") {
     const items = bullets(unknowns);
     if (items.length) {
-      html += `<h3>Open questions · ${escapeHtml(brief.title)}</h3><ul>${li(items)}</ul>`;
+      bodyHtml = injectUnderHeading(
+        bodyHtml,
+        "Open questions",
+        `<ul>${li(items)}</ul>`,
+      );
+      changed = true;
     }
   }
   if (mode === "full") {
     const dep = bullets(depends);
     const det = bullets(detail);
-    if (dep.length || det.length) {
-      html += `<h3>Notes · ${escapeHtml(brief.title)}</h3>`;
-      if (dep.length) html += `<p><strong>Depends on</strong></p><ul>${li(dep)}</ul>`;
-      if (det.length) html += `<p><strong>Detail</strong></p><ul>${li(det)}</ul>`;
+    const chunks: string[] = [];
+    if (dep.length) chunks.push(`<p><strong>Depends on</strong></p><ul>${li(dep)}</ul>`);
+    if (det.length) chunks.push(`<p><strong>Detail</strong></p><ul>${li(det)}</ul>`);
+    if (chunks.length) {
+      bodyHtml = injectUnderHeading(
+        bodyHtml,
+        "Notes",
+        `<p><em>From brief · ${escapeHtml(brief.title)}</em></p>${chunks.join("")}`,
+      );
+      changed = true;
     }
   }
-  if (!html) {
-    html = `<h3>From brief · ${escapeHtml(brief.title)}</h3><p>${escapeHtml(brief.markdown.slice(0, 500))}</p>`;
+  if (!changed) {
+    bodyHtml = injectUnderHeading(
+      bodyHtml,
+      "Notes",
+      `<p><strong>${escapeHtml(brief.title)}:</strong> ${escapeHtml(brief.markdown.slice(0, 500))}</p>`,
+    );
   }
-  return applyCanvasOps(doc, [{ op: "appendHtml", html }]);
+  return applyCanvasOps(doc, [{ op: "setBodyHtml", html: bodyHtml }]);
 }
 
 export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
