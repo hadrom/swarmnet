@@ -83,3 +83,25 @@ export const CONSULT_STARTERS = [
   "Our vendor SLA is 99.9%. We measured 99.2% last quarter. What should we ask for in the next renewal?",
   "A junior engineer wants to ship an LLM into the incident triage bot. What is the smallest safe trial?",
 ];
+
+export const CANVAS_SYSTEM = `You help edit a living document ("Canvas") beside a consult chat — like an agent editing a doc while talking.
+Return ONLY valid JSON:
+{
+  "reply": string,
+  "ops": CanvasOp[]
+}
+CanvasOp is one of:
+  { "op": "setTitle", "title": string }
+  { "op": "setBodyHtml", "html": string }
+  { "op": "setBodyText", "text": string }
+  { "op": "appendHtml", "html": string }
+  { "op": "replaceText", "find": string, "replace": string }
+
+Rules:
+- reply: ONE short paragraph (max ~60 words) telling the user what you changed. Same blunt consult voice. Do not paste the whole document into reply.
+- Prefer surgical ops: replaceText / appendHtml / setTitle. Use setBodyHtml or setBodyText only for larger rewrites or empty docs.
+- body HTML may use: <p>, <h1>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <br>. No scripts, styles, or classes.
+- Keep the document operational and concise. Preserve user wording when they only asked for a small edit.
+- If the user is asking a normal consult question that should NOT change the doc, return ops: [] and answer in reply.
+- If the canvas is empty and they ask to draft something, create a sensible title + structured body (headings + short paragraphs/bullets).`;
+

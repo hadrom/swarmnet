@@ -1,5 +1,6 @@
 import { GoogleGenAI, ThinkingLevel } from "@google/genai";
 import {
+  CANVAS_SYSTEM,
   COMPACT_SYSTEM,
   CONSULT_BRIEF_SYSTEM,
   CONSULT_LITE_SYSTEM,
@@ -7,18 +8,22 @@ import {
 } from "@/lib/prompts";
 import {
   mockBrief,
+  mockCanvasEdit,
   mockCompact,
   mockDiscuss,
   mockLite,
 } from "@/lib/mock";
 import type {
   BriefResponse,
+  CanvasDoc,
+  CanvasEditResponse,
+  CanvasOp,
   CompactResponse,
   DiscussResponse,
   LiteResponse,
   WorkingNotes,
 } from "@/lib/types";
-import { emptyNotes } from "@/lib/types";
+import { applyCanvasOps, emptyNotes } from "@/lib/types";
 
 const LITE_MODEL = "gemini-3.5-flash-lite";
 const DEPTH_MODEL = "gemini-3.8-flash";
@@ -338,3 +343,73 @@ export const compactSediment = async (input: { sediment: WorkingNotes }) => {
   const result = await compactNotes({ notes: input.sediment });
   return { ...result, sediment: result.notes };
 };
+
+
+function normalizeCanvasOps(raw: unknown): CanvasOp[] {
+  if (!Array.isArray(raw)) return [];
+  const ops: CanvasOp[] = [];
+  for (const item of raw) {
+    const o = (item ?? {}) as Record<string, unknown>;
+    const op = String(o.op ?? "");
+    if (op === "setTitle") {
+      ops.push({ op: "setTitle", title: String(o.title ?? "") });
+    } else if (op === "setBodyHtml") {
+      ops.push({ op: "setBodyHtml", html: String(o.html ?? "") });
+    } else if (op === "setBodyText") {
+      ops.push({ op: "setBodyText", text: String(o.text ?? "") });
+    } else if (op === "appendHtml") {
+      ops.push({ op: "appendHtml", html: String(o.html ?? "") });
+    } else if (op === "replaceText") {
+      ops.push({
+        op: "replaceText",
+        find: String(o.find ?? ""),
+        replace: String(o.replace ?? ""),
+      });
+    }
+  }
+  return ops;
+}
+
+export async function generateCanvasEdit(input: {
+  message: string;
+  doc: CanvasDoc;
+  history: { role: string; content: string }[];
+}): Promise<CanvasEditResponse & { modelUsed: string; mocked: boolean; doc: CanvasDoc }> {
+  const historyBlock = input.history
+    .slice(-8)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+  const user = `Current canvas JSON:\n${JSON.stringify({
+    title: input.doc.title,
+    bodyText: input.doc.bodyText,
+    bodyHtml: input.doc.bodyHtml,
+  })}\n\nRecent consult conversation:\n${historyBlock || "(none)"}\n\nUser request:\n${input.message}`;
+
+  try {
+    const { data, modelUsed } = await generateJson<Record<string, unknown>>(
+      LITE_MODEL,
+      CANVAS_SYSTEM,
+      user,
+      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 1200 },
+    );
+    const ops = normalizeCanvasOps(data.ops);
+    const next = applyCanvasOps(input.doc, ops);
+    return {
+      reply: String(data.reply ?? "Updated the canvas."),
+      ops,
+      doc: next,
+      modelUsed,
+      mocked: false,
+    };
+  } catch (err) {
+    console.error("canvas edit failed, using mock:", err);
+    const mocked = mockCanvasEdit(input.message, input.doc);
+    return {
+      ...mocked,
+      doc: applyCanvasOps(input.doc, mocked.ops),
+      modelUsed: "mock",
+      mocked: true,
+    };
+  }
+}
+

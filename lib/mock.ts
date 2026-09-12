@@ -1,5 +1,7 @@
 import type {
   BriefResponse,
+  CanvasDoc,
+  CanvasEditResponse,
   CompactResponse,
   DiscussResponse,
   LiteResponse,
@@ -123,3 +125,39 @@ export function mockCompact(notes: WorkingNotes): CompactResponse {
 function unique(items: string[]) {
   return [...new Set(items.filter(Boolean))];
 }
+
+export function mockCanvasEdit(
+  message: string,
+  doc: CanvasDoc,
+): CanvasEditResponse {
+  const topic = message.replace(/\s+/g, " ").trim().slice(0, 72);
+  const empty = !doc.bodyText.trim();
+  if (empty || /draft|write|start|create|canvas/i.test(message)) {
+    const title = doc.title === "Untitled canvas" ? topic || "Working note" : doc.title;
+    const html = `<h2>Bottom line</h2><p>${topic || "Scoped decision note."}</p><h2>What we know</h2><ul><li>Seeded from consult.</li><li>Edit freely or ask for changes.</li></ul><h2>Open questions</h2><ul><li>What should we lock before acting?</li></ul>`;
+    return {
+      reply: `Drafted a starting canvas${title ? ` titled “${title}”` : ""}. Tweak it yourself or tell me what to change.`,
+      ops: [
+        { op: "setTitle", title },
+        { op: "setBodyHtml", html },
+      ],
+    };
+  }
+  if (/title|rename|call it/i.test(message)) {
+    const title = topic.replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, "").slice(0, 80) || "Working note";
+    return {
+      reply: `Renamed the canvas to “${title}”.`,
+      ops: [{ op: "setTitle", title }],
+    };
+  }
+  return {
+    reply: `Appended a note from your latest ask. Say if you want a tighter rewrite of a section.`,
+    ops: [
+      {
+        op: "appendHtml",
+        html: `<h3>Update</h3><p>${topic}</p>`,
+      },
+    ],
+  };
+}
+

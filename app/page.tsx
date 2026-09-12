@@ -9,6 +9,7 @@ import {
   Loader2,
   Maximize2,
   MessageSquare,
+  PanelRight,
   Plus,
   Sparkles,
   X,
@@ -16,9 +17,11 @@ import {
 import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
+import { CanvasEditor } from "@/components/canvas-editor";
 import { CONSULT_STARTERS } from "@/lib/prompts";
 import type {
   AppMode,
+  CanvasDoc,
   DiscussThread,
   Hook,
   SavedBrief,
@@ -28,22 +31,24 @@ import type {
 import {
   DISCUSS_CHIPS,
   FULL_BRIEF_KEY,
+  emptyCanvas,
   emptyNotes,
   seedNotesFromAnswer,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Full session — consult spine + discuss branches stay in sync. */
-const STORAGE_KEY = "two-lane-session-v4";
+const STORAGE_KEY = "two-lane-session-v5";
 const LEGACY_KEYS = [
   "two-lane-notepad-v2",
   "two-lane-working-notes-v1",
   "two-lane-session-v1",
   "two-lane-session-v2",
   "two-lane-session-v3",
+  "two-lane-session-v4",
 ];
 
-type SideKind = "brief" | "memo";
+type SideKind = "brief" | "memo" | "canvas";
 
 type PersistedSession = {
   messages: ThreadMessage[];
@@ -51,6 +56,7 @@ type PersistedSession = {
   mode: AppMode;
   activeRootId: string | null;
   sideKind: SideKind | null;
+  canvas: CanvasDoc | null;
 };
 
 function uid() {
@@ -107,6 +113,7 @@ function loadSession(): PersistedSession | null {
       mode: parsed.mode === "discuss" ? "discuss" : "consult",
       activeRootId: parsed.activeRootId ?? null,
       sideKind: parsed.sideKind ?? null,
+      canvas: parsed.canvas ?? null,
     };
   } catch {
     return null;
@@ -299,6 +306,7 @@ export default function Home() {
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
   const [tightenTip, setTightenTip] = useState<string | null>(null);
+  const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
   const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -311,6 +319,7 @@ export default function Home() {
     if (saved) {
       setMessages(saved.messages);
       setThreads(saved.threads);
+      setCanvas(saved.canvas ?? null);
       const canDiscuss =
         saved.mode === "discuss" &&
         saved.activeRootId != null &&
@@ -322,7 +331,9 @@ export default function Home() {
       } else {
         setMode("consult");
         setActiveRootId(null);
-        setSideKind(saved.sideKind === "brief" ? "brief" : null);
+        if (saved.sideKind === "brief") setSideKind("brief");
+        else if (saved.sideKind === "canvas" && saved.canvas) setSideKind("canvas");
+        else setSideKind(null);
       }
     }
     setHydrated(true);
@@ -335,14 +346,17 @@ export default function Home() {
       threads,
       mode: inDiscuss ? "discuss" : "consult",
       activeRootId: inDiscuss ? activeRootId : null,
+      canvas,
       sideKind:
         sideKind === "brief"
           ? "brief"
-          : inDiscuss
-            ? "memo"
-            : null,
+          : sideKind === "canvas"
+            ? "canvas"
+            : inDiscuss
+              ? "memo"
+              : null,
     });
-  }, [messages, threads, mode, activeRootId, sideKind, hydrated, inDiscuss]);
+  }, [messages, threads, mode, activeRootId, sideKind, canvas, hydrated, inDiscuss]);
 
   const visibleMessages = inDiscuss ? activeThread!.messages : messages;
 
@@ -369,7 +383,8 @@ export default function Home() {
 
   const showMemoPane = inDiscuss && sideKind === "memo";
   const showBriefPane = sideKind === "brief" && activeBrief !== null;
-  const showSidePane = showMemoPane || showBriefPane;
+  const showCanvasPane = !inDiscuss && sideKind === "canvas" && canvas != null;
+  const showSidePane = showMemoPane || showBriefPane || showCanvasPane;
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
 
   function patchThread(
@@ -390,6 +405,7 @@ export default function Home() {
     setActiveRootId(null);
     setSideKind(null);
     setOpenBrief(null);
+    setCanvas(null);
     setTightenTip(null);
     setError(null);
     setModelHint(null);
@@ -416,8 +432,26 @@ export default function Home() {
       setSideKind("memo");
       return;
     }
-    // Hide memo (or close brief in consult) — stay in current mode.
+    // Hide memo / canvas / brief — stay in current mode.
     setSideKind(null);
+  }
+
+  function openCanvas(msg?: ThreadMessage) {
+    const seedText = msg?.content?.trim() ?? "";
+    const next =
+      canvas ??
+      emptyCanvas(
+        seedText
+          ? {
+              title: seedText.split(/[.!?]/)[0]?.trim().slice(0, 72) || "Working note",
+              bodyText: seedText,
+            }
+          : { title: "Working note" },
+      );
+    setCanvas(next);
+    setOpenBrief(null);
+    setSideKind("canvas");
+    setError(null);
   }
 
   function showMemo() {
@@ -601,6 +635,37 @@ export default function Home() {
           ],
         }));
         setTightenTip(null);
+      } else if (showCanvasPane && canvas) {
+        const nextSpine = [...messages, userMsg];
+        setMessages(nextSpine);
+        const history = messages.map((m) => ({
+          role: m.role,
+          content: m.content,
+        }));
+        const res = await fetch("/api/canvas", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ message: question, doc: canvas, history }),
+        });
+        const data = await res.json();
+        if (!res.ok) throw new Error(data.error || "Canvas edit failed");
+        if (data.doc) setCanvas(data.doc);
+        setMessages([
+          ...nextSpine,
+          {
+            id: uid(),
+            role: "assistant",
+            content: String(data.reply ?? "Updated the canvas."),
+            confidence: "medium",
+            hooks: [],
+            angles: [],
+            briefs: {},
+          },
+        ]);
+        setModelHint(
+          data.mocked ? "mock · fallback" : data.modelUsed || "gemini-3.5-flash-lite",
+        );
+        setSideKind("canvas");
       } else {
         const nextSpine = [...messages, userMsg];
         setMessages(nextSpine);
@@ -795,6 +860,24 @@ export default function Home() {
               {hasBranch ? "Reopen discuss" : "Discuss"}
             </button>
           ) : null}
+
+          {!inDiscuss ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => openCanvas(msg)}
+              className={cn(
+                "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                showCanvasPane
+                  ? "border-sky-700 bg-sky-700 text-white"
+                  : "border-sky-800/70 bg-sky-50 text-sky-950 hover:bg-sky-100 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100",
+              )}
+              title="Open a writable canvas seeded from this answer"
+            >
+              <PanelRight className="h-3 w-3" />
+              {canvas ? "Open canvas" : "Canvas"}
+            </button>
+          ) : null}
         </div>
 
         {!inDiscuss && hasBranch ? (
@@ -900,6 +983,18 @@ export default function Home() {
             {modelHint ? (
               <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
             ) : null}
+            {!inDiscuss && canvas && sideKind !== "canvas" ? (
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                onClick={() => openCanvas()}
+                title="Reopen the canvas document"
+              >
+                <PanelRight className="h-3.5 w-3.5" />
+                Canvas
+              </Button>
+            ) : null}
             {inDiscuss ? (
               <Button
                 type="button"
@@ -951,8 +1046,8 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Elaborate opens a brief with deeper angles. Discuss opens
-                    a separate timeline on one answer.
+                    Elaborate opens a brief. Canvas builds a writable doc you
+                    and the model can edit. Discuss opens a separate timeline.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
@@ -1103,7 +1198,9 @@ export default function Home() {
                 placeholder={
                   inDiscuss
                     ? "Discuss this answer — stays off the consult spine…"
-                    : "Ask a consult question…"
+                    : showCanvasPane
+                      ? "Ask to draft or edit the canvas…"
+                      : "Ask a consult question…"
                 }
                 className={cn(
                   "min-h-[44px] flex-1 resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
@@ -1131,12 +1228,16 @@ export default function Home() {
                 <h2 className="truncate text-sm font-semibold">
                   {showBriefPane && activeBrief
                     ? `Brief · ${activeBrief.brief.title}`
-                    : "Discuss memo"}
+                    : showCanvasPane
+                      ? "Canvas"
+                      : "Discuss memo"}
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {showBriefPane
                     ? "Overview plus deeper angles on this answer"
-                    : "Updates as you talk in this branch"}
+                    : showCanvasPane
+                      ? "Writable doc — edit here or ask in chat"
+                      : "Updates as you talk in this branch"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -1192,18 +1293,26 @@ export default function Home() {
                       ? inDiscuss
                         ? "Close brief (stay in Discuss)"
                         : "Close brief"
-                      : "Hide memo (stay in Discuss)"
+                      : showCanvasPane
+                        ? "Hide canvas"
+                        : "Hide memo (stay in Discuss)"
                   }
                 >
                   <X className="h-4 w-4" />
                   <span className="ml-1 hidden sm:inline">
-                    {showBriefPane ? "Close" : "Hide"}
+                    {showBriefPane || showCanvasPane ? "Close" : "Hide"}
                   </span>
                 </Button>
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-              {showBriefPane && activeBrief ? (
+              {showCanvasPane && canvas ? (
+                <CanvasEditor
+                  doc={canvas}
+                  disabled={busy}
+                  onChange={setCanvas}
+                />
+              ) : showBriefPane && activeBrief ? (
                 <div className="space-y-4">
                   {(() => {
                     const src = activeBrief.message;

@@ -152,3 +152,98 @@ export function seedNotesFromAnswer(
     ],
   };
 }
+
+/** Editable document living beside consult (Canvas lane). */
+export type CanvasDoc = {
+  title: string;
+  /** HTML body from the contenteditable surface. */
+  bodyHtml: string;
+  /** Plain-text snapshot for model context. */
+  bodyText: string;
+  updatedAt: number;
+};
+
+export type CanvasOp =
+  | { op: "setTitle"; title: string }
+  | { op: "setBodyHtml"; html: string }
+  | { op: "setBodyText"; text: string }
+  | { op: "appendHtml"; html: string }
+  | { op: "replaceText"; find: string; replace: string };
+
+export type CanvasEditResponse = {
+  reply: string;
+  ops: CanvasOp[];
+  doc?: Partial<Pick<CanvasDoc, "title" | "bodyHtml" | "bodyText">>;
+};
+
+export function stripHtml(html: string): string {
+  return html
+    .replace(/<br\s*\/?>/gi, "\n")
+    .replace(/<\/p>/gi, "\n\n")
+    .replace(/<\/h[1-3]>/gi, "\n\n")
+    .replace(/<[^>]+>/g, "")
+    .replace(/&nbsp;/g, " ")
+    .replace(/&amp;/g, "&")
+    .replace(/&lt;/g, "<")
+    .replace(/&gt;/g, ">")
+    .replace(/\n{3,}/g, "\n\n")
+    .trim();
+}
+
+function textToHtml(text: string): string {
+  const escaped = text
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;");
+  const html = escaped
+    .split(/\n\n+/)
+    .map((p) => `<p>${p.replace(/\n/g, "<br/>")}</p>`)
+    .join("");
+  return html || "<p></p>";
+}
+
+export function emptyCanvas(seed?: {
+  title?: string;
+  bodyHtml?: string;
+  bodyText?: string;
+}): CanvasDoc {
+  const bodyText = seed?.bodyText ?? "";
+  const bodyHtml = seed?.bodyHtml ?? (bodyText ? textToHtml(bodyText) : "<p></p>");
+  return {
+    title: seed?.title ?? "Untitled canvas",
+    bodyHtml,
+    bodyText: bodyText || stripHtml(bodyHtml),
+    updatedAt: Date.now(),
+  };
+}
+
+export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
+  let next: CanvasDoc = { ...doc };
+  for (const op of ops) {
+    if (op.op === "setTitle") {
+      next = { ...next, title: op.title.trim() || next.title };
+    } else if (op.op === "setBodyHtml") {
+      next = { ...next, bodyHtml: op.html, bodyText: stripHtml(op.html) };
+    } else if (op.op === "setBodyText") {
+      next = {
+        ...next,
+        bodyHtml: textToHtml(op.text),
+        bodyText: op.text.trim(),
+      };
+    } else if (op.op === "appendHtml") {
+      const bodyHtml = `${next.bodyHtml}${op.html}`;
+      next = { ...next, bodyHtml, bodyText: stripHtml(bodyHtml) };
+    } else if (op.op === "replaceText") {
+      if (!op.find) continue;
+      const bodyText = next.bodyText.split(op.find).join(op.replace);
+      const safe = op.replace
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;");
+      const bodyHtml = next.bodyHtml.split(op.find).join(safe);
+      next = { ...next, bodyText, bodyHtml };
+    }
+  }
+  return { ...next, updatedAt: Date.now() };
+}
+

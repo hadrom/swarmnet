@@ -18,6 +18,14 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 - Short answers on the main spine; chips send **consult follow-ups** (stay on the spine)
 - **Elaborate** opens one brief on the side; deeper **angles** live as chips inside that brief
+- **Canvas** opens a writable document beside consult — edit with the toolbar, or ask in chat to draft/patch it agentically
+
+### Canvas (document lane)
+
+1. Click **Canvas** on an answer (or reopen from the header)
+2. Edit title / body with bold, italic, underline, headings, font size
+3. With the canvas open, chat requests update the document (and reply in the spine)
+4. Hide anytime — the doc persists with the session until **New chat**
 
 ### Discuss (separate mode)
 
