@@ -26,27 +26,35 @@ function runCommand(command: string, value?: string) {
 
 export function CanvasEditor({ doc, onChange, disabled }: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
-  const skipSync = useRef(false);
+  /** Last HTML we pushed to React from local typing / toolbar. */
+  const lastLocalHtml = useRef<string | null>(null);
+  const docRef = useRef(doc);
+  docRef.current = doc;
 
+  // Apply external doc updates (agentic edits) into the contenteditable.
   useEffect(() => {
     const el = bodyRef.current;
     if (!el) return;
-    if (skipSync.current) {
-      skipSync.current = false;
+    // Skip if this bodyHtml is what we just emitted locally.
+    if (lastLocalHtml.current !== null && doc.bodyHtml === lastLocalHtml.current) {
+      lastLocalHtml.current = null;
       return;
     }
     if (el.innerHTML !== doc.bodyHtml) {
       el.innerHTML = doc.bodyHtml || "<p></p>";
     }
-  }, [doc.bodyHtml]);
+    lastLocalHtml.current = null;
+  }, [doc.bodyHtml, doc.updatedAt]);
 
   function emitFromEditor() {
+    if (disabled) return;
     const el = bodyRef.current;
     if (!el) return;
-    skipSync.current = true;
     const bodyHtml = el.innerHTML;
+    lastLocalHtml.current = bodyHtml;
+    const current = docRef.current;
     onChange({
-      ...doc,
+      ...current,
       bodyHtml,
       bodyText: stripHtml(bodyHtml),
       updatedAt: Date.now(),
@@ -55,6 +63,7 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
 
   function toolbar(cmd: string, value?: string) {
     return () => {
+      if (disabled) return;
       bodyRef.current?.focus();
       runCommand(cmd, value);
       emitFromEditor();
@@ -68,7 +77,7 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
         disabled={disabled}
         onChange={(e) =>
           onChange({
-            ...doc,
+            ...docRef.current,
             title: e.target.value,
             updatedAt: Date.now(),
           })

@@ -392,10 +392,17 @@ export async function generateCanvasEdit(input: {
       user,
       { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 1200 },
     );
-    const ops = normalizeCanvasOps(data.ops);
+    let ops = normalizeCanvasOps(data.ops);
+    let reply = String(data.reply ?? "Updated the canvas.");
+    // Model sometimes narrates an edit but returns no ops — fall back to mock patch.
+    if (ops.length === 0) {
+      const mocked = mockCanvasEdit(input.message, input.doc);
+      ops = mocked.ops;
+      if (!String(data.reply ?? "").trim()) reply = mocked.reply;
+    }
     const next = applyCanvasOps(input.doc, ops);
     return {
-      reply: String(data.reply ?? "Updated the canvas."),
+      reply,
       ops,
       doc: next,
       modelUsed,

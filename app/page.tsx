@@ -307,6 +307,7 @@ export default function Home() {
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
   const [tightenTip, setTightenTip] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
+  const [canvasEpoch, setCanvasEpoch] = useState(0);
   const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
@@ -406,6 +407,7 @@ export default function Home() {
     setSideKind(null);
     setOpenBrief(null);
     setCanvas(null);
+    setCanvasEpoch(0);
     setTightenTip(null);
     setError(null);
     setModelHint(null);
@@ -649,7 +651,10 @@ export default function Home() {
         });
         const data = await res.json();
         if (!res.ok) throw new Error(data.error || "Canvas edit failed");
-        if (data.doc) setCanvas(data.doc);
+        if (data.doc) {
+          setCanvas(data.doc);
+          setCanvasEpoch((n) => n + 1);
+        }
         setMessages([
           ...nextSpine,
           {
@@ -1308,6 +1313,7 @@ export default function Home() {
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
               {showCanvasPane && canvas ? (
                 <CanvasEditor
+                  key={canvasEpoch}
                   doc={canvas}
                   disabled={busy}
                   onChange={setCanvas}
