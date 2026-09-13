@@ -157,8 +157,9 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
           "[&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold",
           "[&_h3]:mb-1.5 [&_h3]:text-base [&_h3]:font-semibold",
           "[&_p]:mb-2 [&_ul]:mb-2 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:mb-2 [&_ol]:list-decimal [&_ol]:pl-5",
+          "[&_hr]:my-4 [&_hr]:border-0 [&_hr]:border-t [&_hr]:border-zinc-200 dark:[&_hr]:border-zinc-700",
         )}
-        data-placeholder="Write here, or ask in chat to draft and edit…"
+        data-placeholder="Write the trail here, or ask in chat to extend it…"
       />
     </div>
   );
