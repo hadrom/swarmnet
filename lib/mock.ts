@@ -42,23 +42,11 @@ export function mockBrief(
       ? prior.map((q, i) => `${i + 1}. ${q}`).join(" ")
       : question;
   return {
-    markdown: `## Bottom line
-Expand the compressed answer in light of the thread so far. Focus for this brief: **${focus}**.
+    markdown: `Building on the short consult take, here's the fuller picture with focus on **${focus}**.
 
-## What this depends on
-- Prior turns in this consult thread establish the topic and constraints
-- The lite answer is treated as the starting point, not a standalone prompt
-- Operators only open a brief when the short reply is not enough
+The lite answer is the starting point, not a standalone prompt — earlier turns already set the topic and constraints (${contextLine.slice(0, 180)}${contextLine.length > 180 ? "…" : ""}). The trigger question was: ${question}
 
-## Detail
-Thread context: ${contextLine}
-
-Trigger question: ${question}
-
-This mock brief is used when live depth models are unavailable. In production, the brief should inherit entities and constraints from earlier turns rather than treating the latest follow-up as a new topic.
-
-## Unknowns
-- None material from the conversation so far.`,
+In practice you'd unpack why that short answer holds, what it implies for owners and timing, where the tradeoffs sit, and what to watch if conditions change. This mock elaborate is used when live depth models are unavailable; a live reply would stay in the same operational voice, just with more detail than the spine answer.`,
   };
 }
 

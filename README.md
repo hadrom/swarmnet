@@ -24,15 +24,15 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 - Short answers on the main spine; chips send **consult follow-ups**
 - Three suggested topics are **randomized on each page load** (any walk of life)
-- **Elaborate** opens one brief on the side; deeper **angles** live as chips inside that brief
+- **Elaborate** opens a longer freeform expansion of the short answer; deeper **angles** live as chips inside that pane
 - **Grounding** opens the journal beside consult
 
 ### Elaborate → Grounding
 
-Briefs are deep reads, not source of truth. From an open brief:
+Elaborate replies are deeper reads, not source of truth. From an open elaborate:
 
-- **Half** — append a short journal entry (bottom line + open threads)  
-- **Full** — append a richer entry including detail  
+- **Half** — append a short journal entry from the start of the elaborate  
+- **Full** — append a longer slice of the same reply  
 
 ### Grounding (journal lane)
 

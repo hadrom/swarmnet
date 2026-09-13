@@ -77,21 +77,6 @@ export function emptyNotes(): WorkingNotes {
   };
 }
 
-/** Pull a section body from brief markdown by heading text. */
-export function sectionFromBrief(
-  markdown: string | undefined,
-  heading: string,
-): string {
-  if (!markdown) return "";
-  const escaped = heading.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-  const re = new RegExp(
-    `##\\s+${escaped}\\s*\\n([\\s\\S]*?)(?=\\n##\\s+|$)`,
-    "i",
-  );
-  const match = markdown.match(re);
-  return (match?.[1] ?? "").trim();
-}
-
 /** Editable ground-truth document (Grounding lane). Internal name stays CanvasDoc. */
 export type CanvasDoc = {
   title: string;
@@ -209,8 +194,8 @@ export function canvasConvergenceStatus(doc: CanvasDoc): {
 }
 
 /**
- * half = short journal entry from bottom line + unknowns
- * full = richer entry including detail/depends
+ * half = short journal entry from the first stretch of the elaborate
+ * full = longer journal entry from more of the elaborate
  */
 export type PromoteBriefMode = "half" | "full" | "bottom" | "unknowns";
 
@@ -221,70 +206,44 @@ function appendJournalEntry(bodyHtml: string, entryHtml: string): string {
   return `${base}${chunk}`;
 }
 
-/** Append an Elaborate brief into the Grounding journal as a new trail entry. */
+function markdownToJournalParagraphs(markdown: string, maxChars: number): string {
+  const plain = markdown
+    .replace(/^#{1,6}\s+/gm, "")
+    .replace(/\s+/g, " ")
+    .trim()
+    .slice(0, maxChars);
+  if (!plain) return "";
+  // Split into ~sentence-sized paragraphs for the journal.
+  const chunks = plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [plain];
+  const paras: string[] = [];
+  let buf = "";
+  for (const chunk of chunks) {
+    const next = `${buf}${chunk}`.trim();
+    if (next.length > 220 && buf) {
+      paras.push(`<p>${escapeHtml(buf.trim())}</p>`);
+      buf = chunk;
+    } else {
+      buf = next;
+    }
+  }
+  if (buf.trim()) paras.push(`<p>${escapeHtml(buf.trim())}</p>`);
+  return paras.join("");
+}
+
+/** Append an Elaborate reply into the Grounding journal as a new trail entry. */
 export function promoteBriefIntoCanvas(
   doc: CanvasDoc,
   brief: SavedBrief,
   mode: PromoteBriefMode,
 ): CanvasDoc {
-  const bottom = sectionFromBrief(brief.markdown, "Bottom line");
-  const unknowns = sectionFromBrief(brief.markdown, "Unknowns");
-  const depends = sectionFromBrief(brief.markdown, "What this depends on");
-  const detail = sectionFromBrief(brief.markdown, "Detail");
-
-  const bullets = (block: string) =>
-    block
-      .split("\n")
-      .map((l) => l.replace(/^[-*•]\s*/, "").trim())
-      .filter(
-        (l) =>
-          l.length > 0 &&
-          !/^none material/i.test(l) &&
-          !/^none from/i.test(l),
-      );
-
-  const parts: string[] = [];
-  const wantHalf =
-    mode === "half" ||
-    mode === "bottom" ||
-    mode === "unknowns" ||
-    mode === "full";
-  const wantFull = mode === "full";
-
-  if (wantHalf) {
-    const text = (bottom || brief.markdown.slice(0, 400))
-      .replace(/\s+/g, " ")
-      .trim();
-    if (text) {
-      parts.push(
-        `<p><strong>From brief · ${escapeHtml(brief.title)}</strong> — ${escapeHtml(text)}</p>`,
-      );
-    }
-    const open = bullets(unknowns);
-    if (
-      open.length &&
-      (mode === "half" || mode === "unknowns" || mode === "full")
-    ) {
-      parts.push(`<p>Still open: ${escapeHtml(open.join("; "))}.</p>`);
-    }
-  }
-  if (wantFull) {
-    const dep = bullets(depends);
-    const det = bullets(detail);
-    if (dep.length) {
-      parts.push(`<p>Depends on: ${escapeHtml(dep.join("; "))}.</p>`);
-    }
-    if (det.length) {
-      parts.push(`<p>${escapeHtml(det.join(" "))}.</p>`);
-    }
-  }
-  if (parts.length === 0) {
-    parts.push(
-      `<p><strong>From brief · ${escapeHtml(brief.title)}</strong> — ${escapeHtml(brief.markdown.slice(0, 500))}</p>`,
-    );
-  }
-
-  const bodyHtml = appendJournalEntry(doc.bodyHtml, parts.join(""));
+  const maxChars =
+    mode === "full" ? 900 : mode === "half" || mode === "bottom" ? 380 : 280;
+  const body = markdownToJournalParagraphs(brief.markdown, maxChars);
+  const header = `<p><strong>From elaborate · ${escapeHtml(brief.title)}</strong></p>`;
+  const entry = body
+    ? `${header}${body}`
+    : `${header}<p>${escapeHtml(brief.markdown.slice(0, maxChars))}</p>`;
+  const bodyHtml = appendJournalEntry(doc.bodyHtml, entry);
   return applyCanvasOps(doc, [{ op: "setBodyHtml", html: bodyHtml }]);
 }
 
