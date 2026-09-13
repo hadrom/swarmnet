@@ -46,6 +46,9 @@ export type CompactResponse = {
 
 export type ChatRole = "user" | "assistant";
 
+/** Which lane produced this spine/branch message — drives action chips. */
+export type MessageKind = "consult" | "canvas" | "discuss";
+
 /** One saved elaboration, keyed on the message under `briefs`. */
 export type SavedBrief = {
   title: string;
@@ -57,6 +60,8 @@ export type ThreadMessage = {
   id: string;
   role: ChatRole;
   content: string;
+  /** Routing provenance. Canvas replies hide consult action chips. */
+  kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
   /** Consult follow-ups (spine) or Discuss follow-ups (branch). */
   hooks?: Hook[];

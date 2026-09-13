@@ -10,6 +10,7 @@ import {
   Maximize2,
   MessageSquare,
   PanelRight,
+  PenLine,
   Plus,
   Sparkles,
   X,
@@ -41,7 +42,7 @@ import type { PromoteBriefMode } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
 /** Full session — consult spine + discuss branches stay in sync. */
-const STORAGE_KEY = "two-lane-session-v5";
+const STORAGE_KEY = "two-lane-session-v6";
 const LEGACY_KEYS = [
   "two-lane-notepad-v2",
   "two-lane-working-notes-v1",
@@ -49,6 +50,7 @@ const LEGACY_KEYS = [
   "two-lane-session-v2",
   "two-lane-session-v3",
   "two-lane-session-v4",
+  "two-lane-session-v5",
 ];
 
 type SideKind = "brief" | "memo" | "canvas";
@@ -60,6 +62,8 @@ type PersistedSession = {
   activeRootId: string | null;
   sideKind: SideKind | null;
   canvas: CanvasDoc | null;
+  /** Explicit arm — chat patches canvas only when true. */
+  canvasEditing?: boolean;
 };
 
 function uid() {
@@ -117,6 +121,7 @@ function loadSession(): PersistedSession | null {
       activeRootId: parsed.activeRootId ?? null,
       sideKind: parsed.sideKind ?? null,
       canvas: parsed.canvas ?? null,
+      canvasEditing: Boolean(parsed.canvasEditing),
     };
   } catch {
     return null;
@@ -311,9 +316,12 @@ export default function Home() {
   const [tightenTip, setTightenTip] = useState<string | null>(null);
   const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
   const [canvasEpoch, setCanvasEpoch] = useState(0);
+  /** When true, composer patches the canvas instead of consult. */
+  const [canvasEditing, setCanvasEditing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
 
   const bottomRef = useRef<HTMLDivElement>(null);
+  const composerRef = useRef<HTMLTextAreaElement>(null);
 
   const activeThread = activeRootId ? threads[activeRootId] ?? null : null;
   const inDiscuss = mode === "discuss" && activeThread != null;
@@ -332,12 +340,20 @@ export default function Home() {
         setMode("discuss");
         setActiveRootId(saved.activeRootId);
         setSideKind(saved.sideKind === "brief" ? "brief" : "memo");
+        setCanvasEditing(false);
       } else {
         setMode("consult");
         setActiveRootId(null);
-        if (saved.sideKind === "brief") setSideKind("brief");
-        else if (saved.sideKind === "canvas" && saved.canvas) setSideKind("canvas");
-        else setSideKind(null);
+        if (saved.sideKind === "brief") {
+          setSideKind("brief");
+          setCanvasEditing(false);
+        } else if (saved.sideKind === "canvas" && saved.canvas) {
+          setSideKind("canvas");
+          setCanvasEditing(Boolean(saved.canvasEditing));
+        } else {
+          setSideKind(null);
+          setCanvasEditing(false);
+        }
       }
     }
     setHydrated(true);
@@ -345,12 +361,14 @@ export default function Home() {
 
   useEffect(() => {
     if (!hydrated) return;
+    const canvasPaneOpen = !inDiscuss && sideKind === "canvas" && canvas != null;
     saveSession({
       messages,
       threads,
       mode: inDiscuss ? "discuss" : "consult",
       activeRootId: inDiscuss ? activeRootId : null,
       canvas,
+      canvasEditing: canvasPaneOpen ? canvasEditing : false,
       sideKind:
         sideKind === "brief"
           ? "brief"
@@ -360,7 +378,17 @@ export default function Home() {
               ? "memo"
               : null,
     });
-  }, [messages, threads, mode, activeRootId, sideKind, canvas, hydrated, inDiscuss]);
+  }, [
+    messages,
+    threads,
+    mode,
+    activeRootId,
+    sideKind,
+    canvas,
+    canvasEditing,
+    hydrated,
+    inDiscuss,
+  ]);
 
   const visibleMessages = inDiscuss ? activeThread!.messages : messages;
 
@@ -388,6 +416,8 @@ export default function Home() {
   const showMemoPane = inDiscuss && sideKind === "memo";
   const showBriefPane = sideKind === "brief" && activeBrief !== null;
   const showCanvasPane = !inDiscuss && sideKind === "canvas" && canvas != null;
+  /** Chat routes to canvas API only when explicitly armed. */
+  const editingCanvas = showCanvasPane && canvasEditing;
   const showSidePane = showMemoPane || showBriefPane || showCanvasPane;
   const canvasStatus = useMemo(
     () => (canvas ? canvasConvergenceStatus(canvas) : null),
@@ -415,6 +445,7 @@ export default function Home() {
     setOpenBrief(null);
     setCanvas(null);
     setCanvasEpoch(0);
+    setCanvasEditing(false);
     setTightenTip(null);
     setError(null);
     setModelHint(null);
@@ -430,6 +461,7 @@ export default function Home() {
     setActiveRootId(null);
     setOpenBrief(null);
     setSideKind(null);
+    setCanvasEditing(false);
     setTightenTip(null);
     setModelHint(null);
     setError(null);
@@ -441,6 +473,7 @@ export default function Home() {
       setSideKind("memo");
       return;
     }
+    if (sideKind === "canvas") setCanvasEditing(false);
     // Hide memo / canvas / brief — stay in current mode.
     setSideKind(null);
   }
@@ -460,7 +493,19 @@ export default function Home() {
     setCanvas(next);
     setOpenBrief(null);
     setSideKind("canvas");
+    // Opening for reading does not arm chat → canvas edits.
+    setCanvasEditing(false);
     setError(null);
+  }
+
+  function armCanvasEditing(armed: boolean) {
+    if (!canvas) return;
+    setSideKind("canvas");
+    setOpenBrief(null);
+    setCanvasEditing(armed);
+    if (armed) {
+      window.setTimeout(() => composerRef.current?.focus(), 50);
+    }
   }
 
   function promoteBrief(mode: PromoteBriefMode) {
@@ -477,6 +522,7 @@ export default function Home() {
     setCanvasEpoch((n) => n + 1);
     setOpenBrief(null);
     setSideKind("canvas");
+    setCanvasEditing(false);
     setError(null);
   }
 
@@ -492,6 +538,7 @@ export default function Home() {
   ) {
     setOpenBrief({ messageId, key, from });
     setSideKind("brief");
+    setCanvasEditing(false);
   }
 
   function saveBriefOnMessage(
@@ -520,6 +567,7 @@ export default function Home() {
     }
     setOpenBrief({ messageId, key, from });
     setSideKind("brief");
+    setCanvasEditing(false);
   }
 
   /**
@@ -547,6 +595,7 @@ export default function Home() {
     setActiveRootId(msg.id);
     setOpenBrief(null);
     setSideKind("memo");
+    setCanvasEditing(false);
     setTightenTip(null);
     setModelHint(null);
     setError(null);
@@ -612,6 +661,11 @@ export default function Home() {
       id: uid(),
       role: "user",
       content: question,
+      kind: inDiscuss
+        ? "discuss"
+        : editingCanvas
+          ? "canvas"
+          : "consult",
     };
 
     setBusy(true);
@@ -633,6 +687,7 @@ export default function Home() {
           {
             id: `root-${activeRootId}`,
             role: "assistant",
+            kind: "consult",
             content: rootAnswer?.content ?? activeThread.rootPreview,
           },
           ...prior,
@@ -653,6 +708,7 @@ export default function Home() {
             {
               id: uid(),
               role: "assistant",
+              kind: "discuss",
               confidence: "medium",
               content: data.reply,
               hooks: data.hooks,
@@ -661,7 +717,7 @@ export default function Home() {
           ],
         }));
         setTightenTip(null);
-      } else if (showCanvasPane && canvas) {
+      } else if (editingCanvas && canvas) {
         const nextSpine = [...messages, userMsg];
         setMessages(nextSpine);
         const history = messages.map((m) => ({
@@ -684,8 +740,8 @@ export default function Home() {
           {
             id: uid(),
             role: "assistant",
+            kind: "canvas",
             content: String(data.reply ?? "Updated the canvas."),
-            confidence: "medium",
             hooks: [],
             angles: [],
             briefs: {},
@@ -704,6 +760,7 @@ export default function Home() {
           {
             id: uid(),
             role: "assistant",
+            kind: "consult",
             content: data.answer,
             confidence: data.confidence,
             hooks: data.hooks,
@@ -813,6 +870,42 @@ export default function Home() {
 
   function renderMessageActions(msg: ThreadMessage) {
     if (msg.role !== "assistant") return null;
+
+    // Canvas edit replies — no Consult action chips (Elaborate / Canvas / Discuss).
+    if (msg.kind === "canvas") {
+      return (
+        <div className="flex max-w-[95%] flex-wrap items-center gap-1.5">
+          <Badge className="border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100">
+            canvas edit
+          </Badge>
+          {showCanvasPane ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => armCanvasEditing(true)}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-700 bg-sky-700 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-sky-800 disabled:opacity-50"
+            >
+              <PenLine className="h-3 w-3" />
+              Edit again
+            </button>
+          ) : canvas ? (
+            <button
+              type="button"
+              disabled={busy}
+              onClick={() => {
+                setSideKind("canvas");
+                armCanvasEditing(true);
+              }}
+              className="inline-flex items-center gap-1 rounded-full border border-sky-700 bg-sky-700 px-2.5 py-1 text-[11px] font-medium text-white transition hover:bg-sky-800 disabled:opacity-50"
+            >
+              <PanelRight className="h-3 w-3" />
+              Open canvas
+            </button>
+          ) : null}
+        </div>
+      );
+    }
+
     const savedEntries = Object.entries(msg.briefs ?? {});
     const isBriefSource =
       sideKind === "brief" && openBrief?.messageId === msg.id;
@@ -963,7 +1056,9 @@ export default function Home() {
         "flex h-dvh flex-col overflow-hidden text-zinc-900 dark:text-zinc-50",
         inDiscuss
           ? "bg-amber-50/40 dark:bg-zinc-950"
-          : "bg-zinc-50 dark:bg-zinc-950",
+          : editingCanvas
+            ? "bg-sky-50/50 dark:bg-zinc-950"
+            : "bg-zinc-50 dark:bg-zinc-950",
       )}
     >
       <header
@@ -971,7 +1066,9 @@ export default function Home() {
           "shrink-0 border-b backdrop-blur",
           inDiscuss
             ? "border-amber-200 bg-amber-50/90 dark:border-amber-900 dark:bg-amber-950/40"
-            : "border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/80",
+            : editingCanvas
+              ? "border-sky-300 bg-sky-50/95 dark:border-sky-900 dark:bg-sky-950/50"
+              : "border-zinc-200 bg-white/80 dark:border-zinc-800 dark:bg-zinc-950/80",
         )}
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
@@ -1000,12 +1097,18 @@ export default function Home() {
                 <Badge className="border-amber-300 bg-white text-amber-900 dark:border-amber-800 dark:bg-amber-950 dark:text-amber-100">
                   discuss mode
                 </Badge>
+              ) : editingCanvas ? (
+                <Badge className="border-sky-400 bg-sky-700 text-white dark:border-sky-600 dark:bg-sky-600">
+                  editing canvas
+                </Badge>
               ) : null}
             </div>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {inDiscuss
                 ? `Branch on: ${previewOf(rootAnswer?.content ?? activeThread?.rootPreview ?? "", 100)}`
-                : "Consult for short answers. Elaborate to read deeper. Canvas is the ground-truth doc."}
+                : editingCanvas
+                  ? "Composer targets the canvas — turn off Edit with chat to consult again."
+                  : "Consult for short answers. Elaborate to read deeper. Canvas is the ground-truth doc."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -1116,6 +1219,7 @@ export default function Home() {
                     sideKind === "brief" && openBrief?.messageId === msg.id;
                   const isRootInConsult =
                     !inDiscuss && Boolean(threads[msg.id]);
+                  const isCanvasTurn = msg.kind === "canvas";
 
                   return (
                     <div
@@ -1129,8 +1233,12 @@ export default function Home() {
                         className={cn(
                           "max-w-[95%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
                           msg.role === "user"
-                            ? "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                            : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
+                            ? isCanvasTurn
+                              ? "bg-sky-800 text-white dark:bg-sky-200 dark:text-sky-950"
+                              : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                            : isCanvasTurn
+                              ? "bg-sky-50 text-sky-950 shadow-sm ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-50 dark:ring-sky-900"
+                              : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
                           isBriefSource &&
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
                           isRootInConsult && "ring-2 ring-amber-500/50",
@@ -1159,13 +1267,61 @@ export default function Home() {
               "shrink-0 border-t p-3",
               inDiscuss
                 ? "border-amber-200 bg-amber-50/80 dark:border-amber-900 dark:bg-amber-950/30"
-                : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
+                : editingCanvas
+                  ? "border-sky-300 bg-sky-100/90 dark:border-sky-900 dark:bg-sky-950/40"
+                  : "border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950",
             )}
           >
             {error ? (
               <p className="mb-2 text-xs text-red-600 dark:text-red-400">
                 {error}
               </p>
+            ) : null}
+
+            {editingCanvas ? (
+              <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2 rounded-xl border border-sky-400 bg-sky-700 px-3 py-2.5 text-white shadow-sm dark:border-sky-600 dark:bg-sky-800">
+                <PenLine className="h-4 w-4 shrink-0" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold tracking-wide">
+                    Edit with chat · armed
+                  </p>
+                  <p className="truncate text-[11px] text-sky-100/90">
+                    Your next message patches the canvas — not a consult answer
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  variant="outline"
+                  className="shrink-0 border-white/40 bg-white/10 text-white hover:bg-white/20"
+                  onClick={() => armCanvasEditing(false)}
+                >
+                  Back to consult
+                </Button>
+              </div>
+            ) : null}
+
+            {showCanvasPane && !editingCanvas ? (
+              <div className="mx-auto mb-2 flex w-full max-w-2xl items-center gap-2 rounded-xl border border-sky-200 bg-white px-3 py-2 dark:border-sky-900 dark:bg-sky-950/40">
+                <PanelRight className="h-3.5 w-3.5 shrink-0 text-sky-800 dark:text-sky-200" />
+                <div className="min-w-0 flex-1">
+                  <p className="truncate text-xs font-semibold text-sky-950 dark:text-sky-100">
+                    Canvas open · reading
+                  </p>
+                  <p className="truncate text-[11px] text-sky-800/80 dark:text-sky-200/80">
+                    Chat still consults — arm Edit with chat to patch the doc
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  size="sm"
+                  className="shrink-0 bg-sky-700 text-white hover:bg-sky-800"
+                  onClick={() => armCanvasEditing(true)}
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  Edit with chat
+                </Button>
+              </div>
             ) : null}
 
             {inDiscuss && activeThread && !showMemoPane ? (
@@ -1215,6 +1371,7 @@ export default function Home() {
               }}
             >
               <textarea
+                ref={composerRef}
                 value={input}
                 onChange={(e) => setInput(e.target.value)}
                 onKeyDown={(e) => {
@@ -1227,22 +1384,27 @@ export default function Home() {
                 placeholder={
                   inDiscuss
                     ? "Discuss this answer — stays off the consult spine…"
-                    : showCanvasPane
-                      ? "Ask to draft or edit the canvas…"
+                    : editingCanvas
+                      ? "Edit the canvas — e.g. lock this as a Decision…"
                       : "Ask a consult question…"
                 }
                 className={cn(
-                  "min-h-[44px] flex-1 resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none ring-zinc-400 placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
+                  "min-h-[44px] flex-1 resize-none rounded-xl border bg-white px-3 py-2.5 text-sm outline-none placeholder:text-zinc-400 focus:ring-2 dark:bg-zinc-900",
                   inDiscuss
-                    ? "border-amber-200 dark:border-amber-900"
-                    : "border-zinc-200 dark:border-zinc-700",
+                    ? "border-amber-200 ring-amber-400 dark:border-amber-900"
+                    : editingCanvas
+                      ? "border-sky-400 bg-sky-50/80 ring-sky-500 dark:border-sky-700 dark:bg-sky-950/30"
+                      : "border-zinc-200 ring-zinc-400 dark:border-zinc-700",
                 )}
               />
               <Button
                 type="submit"
                 disabled={busy || !input.trim()}
                 size="lg"
-                className="shrink-0"
+                className={cn(
+                  "shrink-0",
+                  editingCanvas && "bg-sky-700 hover:bg-sky-800",
+                )}
               >
                 <ArrowUp className="h-4 w-4" />
               </Button>
@@ -1252,26 +1414,58 @@ export default function Home() {
 
         {showSidePane ? (
           <section className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
-            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+            <div
+              className={cn(
+                "flex shrink-0 items-center justify-between gap-2 border-b px-4 py-3",
+                editingCanvas
+                  ? "border-sky-300 bg-sky-50 dark:border-sky-900 dark:bg-sky-950/40"
+                  : "border-zinc-200 dark:border-zinc-800",
+              )}
+            >
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">
                   {showBriefPane && activeBrief
                     ? `Brief · ${activeBrief.brief.title}`
                     : showCanvasPane
-                      ? "Canvas"
+                      ? editingCanvas
+                        ? "Canvas · chat editing"
+                        : "Canvas"
                       : "Discuss memo"}
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {showBriefPane
                     ? "Deep read — promote keepers into Canvas"
                     : showCanvasPane
-                      ? canvasStatus
-                        ? `${canvasStatus.decisions} decided · ${canvasStatus.open} open — edit or ask in chat`
-                        : "Ground-truth doc — edit here or ask in chat"
+                      ? editingCanvas
+                        ? "Composer is locked onto this doc until you disarm"
+                        : canvasStatus
+                          ? `${canvasStatus.decisions} decided · ${canvasStatus.open} open — read or edit yourself`
+                          : "Ground-truth doc — edit here; arm chat to patch"
                       : "Updates as you talk in this branch"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                {showCanvasPane ? (
+                  <Button
+                    type="button"
+                    size="sm"
+                    variant={editingCanvas ? "outline" : "primary"}
+                    className={cn(
+                      editingCanvas
+                        ? "border-sky-400 bg-white text-sky-950 hover:bg-sky-50 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-100"
+                        : "bg-sky-700 text-white hover:bg-sky-800",
+                    )}
+                    onClick={() => armCanvasEditing(!editingCanvas)}
+                    title={
+                      editingCanvas
+                        ? "Stop routing chat to the canvas"
+                        : "Route the next chat turns into canvas edits"
+                    }
+                  >
+                    <PenLine className="h-3.5 w-3.5" />
+                    {editingCanvas ? "Stop editing" : "Edit with chat"}
+                  </Button>
+                ) : null}
                 {showMemoPane && activeThread ? (
                   <>
                     <Button
@@ -1322,6 +1516,7 @@ export default function Home() {
                     onClick={() => {
                       setOpenBrief(null);
                       setSideKind("canvas");
+                      setCanvasEditing(false);
                     }}
                   >
                     Back to canvas
