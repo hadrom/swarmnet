@@ -17,19 +17,14 @@ export type BriefResponse = {
 };
 
 /**
- * Living Discuss memo — shared understanding that grows as you talk.
- * Not a peer-review / debate scorecard.
+ * Kept for /api/research + /api/compact (unused by UI after Grounding merge).
+ * Not shown in the product surface.
  */
 export type WorkingNotes = {
-  /** Short label for what you're talking about. */
   topic: string;
-  /** Plain-language snapshot of where things stand right now. */
   whereWeAre: string;
-  /** Things you've clearly settled together. */
   agreed: string[];
-  /** Things still fuzzy or undecided. */
   stillOpen: string[];
-  /** How you got here (oldest → newest), one short line per turn. */
   trail: string[];
 };
 
@@ -46,8 +41,8 @@ export type CompactResponse = {
 
 export type ChatRole = "user" | "assistant";
 
-/** Which lane produced this spine/branch message — drives action chips. */
-export type MessageKind = "consult" | "canvas" | "discuss";
+/** Which lane produced this message — drives action chips. */
+export type MessageKind = "consult" | "grounding" | "canvas";
 
 /** One saved elaboration, keyed on the message under `briefs`. */
 export type SavedBrief = {
@@ -60,10 +55,9 @@ export type ThreadMessage = {
   id: string;
   role: ChatRole;
   content: string;
-  /** Routing provenance. Canvas replies hide consult action chips. */
+  /** Routing provenance. Grounding replies hide consult action chips. */
   kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
-  /** Consult follow-ups (spine) or Discuss follow-ups (branch). */
   hooks?: Hook[];
   /** Brief angles — shown inside the Elaborate pane, not on the spine. */
   angles?: Hook[];
@@ -71,30 +65,7 @@ export type ThreadMessage = {
   briefs?: Record<string, SavedBrief>;
 };
 
-/**
- * A Discuss branch rooted on one consult answer.
- * Lives outside the consult spine — own timeline + living memo.
- */
-export type DiscussThread = {
-  rootAnswerId: string;
-  /** Short preview of the root answer for chrome / markers. */
-  rootPreview: string;
-  messages: ThreadMessage[];
-  notes: WorkingNotes;
-  chips: Hook[];
-};
-
-export type AppMode = "consult" | "discuss";
-
 export const FULL_BRIEF_KEY = "full";
-
-/** Soft follow-ups while Discuss is active. */
-export const DISCUSS_CHIPS: Hook[] = [
-  { id: "settled", label: "What have we settled?" },
-  { id: "unsure", label: "What are we still unsure about?" },
-  { id: "change", label: "What would change our minds?" },
-  { id: "next", label: "Sensible next step" },
-];
 
 export function emptyNotes(): WorkingNotes {
   return {
@@ -121,44 +92,7 @@ export function sectionFromBrief(
   return (match?.[1] ?? "").trim();
 }
 
-export function seedNotesFromAnswer(
-  answer: string,
-  brief?: SavedBrief | null,
-): WorkingNotes {
-  const bottom = sectionFromBrief(brief?.markdown, "Bottom line");
-  const unknowns = sectionFromBrief(brief?.markdown, "Unknowns");
-  const stillOpen = unknowns
-    .split("\n")
-    .map((line) => line.replace(/^[-*•]\s+/, "").trim())
-    .filter(
-      (line) =>
-        line.length > 0 &&
-        !/^none material/i.test(line) &&
-        !/^none from/i.test(line),
-    )
-    .slice(0, 5);
-
-  const whereWeAre = (bottom || answer).replace(/\s+/g, " ").trim().slice(0, 600);
-  const topic =
-    whereWeAre.split(/[.!?]/)[0]?.trim().slice(0, 80) || "Open discussion";
-
-  return {
-    topic,
-    whereWeAre,
-    agreed: [],
-    stillOpen:
-      stillOpen.length > 0
-        ? stillOpen
-        : ["Anything we should settle before acting?"],
-    trail: [
-      brief
-        ? `Started Discuss from the answer + brief “${brief.title}”`
-        : "Started Discuss from this answer",
-    ],
-  };
-}
-
-/** Editable document living beside consult (Canvas lane). */
+/** Editable ground-truth document (Grounding lane). Internal name stays CanvasDoc. */
 export type CanvasDoc = {
   title: string;
   /** HTML body from the contenteditable surface. */
@@ -214,7 +148,7 @@ function escapeHtml(text: string): string {
     .replace(/>/g, "&gt;");
 }
 
-/** Soft working-note skeleton — canvas is ground truth; sections guide convergence. */
+/** Soft working-note skeleton — Grounding is ground truth; sections guide convergence. */
 export function seedWorkingCanvas(opts?: {
   title?: string;
   seedAnswer?: string;
@@ -257,9 +191,10 @@ export function emptyCanvas(seed?: {
     return seedWorkingCanvas({ title: seed?.title });
   }
   const bodyText = seed?.bodyText ?? "";
-  const bodyHtml = seed?.bodyHtml ?? (bodyText ? textToHtml(bodyText) : "<p></p>");
+  const bodyHtml =
+    seed?.bodyHtml ?? (bodyText ? textToHtml(bodyText) : "<p></p>");
   return {
-    title: seed?.title ?? "Untitled canvas",
+    title: seed?.title ?? "Untitled grounding",
     bodyHtml,
     bodyText: bodyText || stripHtml(bodyHtml),
     updatedAt: Date.now(),
@@ -294,7 +229,12 @@ export function canvasConvergenceStatus(doc: CanvasDoc): {
   };
 }
 
-export type PromoteBriefMode = "bottom" | "unknowns" | "full";
+/**
+ * half = Bottom line + Open questions (partial promote)
+ * full = half + detail/depends into Notes
+ * bottom / unknowns kept for finer calls if needed
+ */
+export type PromoteBriefMode = "half" | "full" | "bottom" | "unknowns";
 
 /** Insert HTML just before the end of an <h2>Section</h2>... block. */
 function injectUnderHeading(
@@ -310,7 +250,6 @@ function injectUnderHeading(
     return `${bodyHtml}<h2>${heading}</h2>${injection}`;
   }
   return bodyHtml.replace(re, (_m, h2: string, rest: string) => {
-    // Drop italic placeholders when real content arrives.
     const cleaned = rest.replace(
       /<li[^>]*>\s*<em[^>]*>[\s\S]*?<\/em>\s*<\/li>/gi,
       "",
@@ -319,7 +258,7 @@ function injectUnderHeading(
   });
 }
 
-/** Fold an Elaborate brief into the canvas ledger under the right headings. */
+/** Fold an Elaborate brief into the Grounding ledger under the right headings. */
 export function promoteBriefIntoCanvas(
   doc: CanvasDoc,
   brief: SavedBrief,
@@ -344,11 +283,18 @@ export function promoteBriefIntoCanvas(
   const li = (items: string[]) =>
     items.map((i) => `<li>${escapeHtml(i)}</li>`).join("");
 
+  const wantBottom = mode === "bottom" || mode === "half" || mode === "full";
+  const wantUnknowns =
+    mode === "unknowns" || mode === "half" || mode === "full";
+  const wantFull = mode === "full";
+
   let bodyHtml = doc.bodyHtml;
   let changed = false;
 
-  if (mode === "bottom" || mode === "full") {
-    const text = (bottom || brief.markdown.slice(0, 400)).replace(/\s+/g, " ").trim();
+  if (wantBottom) {
+    const text = (bottom || brief.markdown.slice(0, 400))
+      .replace(/\s+/g, " ")
+      .trim();
     if (text) {
       bodyHtml = injectUnderHeading(
         bodyHtml,
@@ -358,7 +304,7 @@ export function promoteBriefIntoCanvas(
       changed = true;
     }
   }
-  if (mode === "unknowns" || mode === "full") {
+  if (wantUnknowns) {
     const items = bullets(unknowns);
     if (items.length) {
       bodyHtml = injectUnderHeading(
@@ -369,12 +315,14 @@ export function promoteBriefIntoCanvas(
       changed = true;
     }
   }
-  if (mode === "full") {
+  if (wantFull) {
     const dep = bullets(depends);
     const det = bullets(detail);
     const chunks: string[] = [];
-    if (dep.length) chunks.push(`<p><strong>Depends on</strong></p><ul>${li(dep)}</ul>`);
-    if (det.length) chunks.push(`<p><strong>Detail</strong></p><ul>${li(det)}</ul>`);
+    if (dep.length)
+      chunks.push(`<p><strong>Depends on</strong></p><ul>${li(dep)}</ul>`);
+    if (det.length)
+      chunks.push(`<p><strong>Detail</strong></p><ul>${li(det)}</ul>`);
     if (chunks.length) {
       bodyHtml = injectUnderHeading(
         bodyHtml,
@@ -423,4 +371,3 @@ export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
   }
   return { ...next, updatedAt: Date.now() };
 }
-

@@ -82,7 +82,7 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
             updatedAt: Date.now(),
           })
         }
-        placeholder="Canvas title"
+        placeholder="Grounding title"
         className="w-full border-0 border-b border-zinc-200 bg-transparent px-0 py-2 text-lg font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:text-zinc-50"
       />
 

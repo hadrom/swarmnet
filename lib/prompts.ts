@@ -84,8 +84,8 @@ export const CONSULT_STARTERS = [
   "A junior engineer wants to ship an LLM into the incident triage bot. What is the smallest safe trial?",
 ];
 
-export const CANVAS_SYSTEM = `You help maintain a living ground-truth document ("Canvas") beside consult chat.
-The canvas is what the user cross-checks — not a side memo. Prefer editing the doc over long chat answers.
+export const CANVAS_SYSTEM = `You help maintain a living ground-truth document ("Grounding") beside consult chat.
+Grounding is what the user cross-checks — not a side memo. Prefer editing the doc over long chat answers.
 
 Return ONLY valid JSON:
 {
@@ -99,7 +99,7 @@ CanvasOp is one of:
   { "op": "appendHtml", "html": string }
   { "op": "replaceText", "find": string, "replace": string }
 
-Preferred canvas skeleton (keep these h2 headings when present):
+Preferred grounding skeleton (keep these h2 headings when present):
   Bottom line — current held truth
   Decisions — locked agreements (bullets)
   Open questions — unresolved items (bullets)
@@ -113,5 +113,5 @@ Rules:
 - When something is still fuzzy: add/update a bullet under Open questions instead of hedging only in chat.
 - Preserve user wording on small edits. Keep the doc operational and concise.
 - If they ask a normal consult question that should NOT change the doc, return ops: [] and answer in reply.
-- If the canvas is empty / placeholder-only and they ask to draft, create the skeleton above with a sensible title.`;
+- If the grounding doc is empty / placeholder-only and they ask to draft, create the skeleton above with a sensible title.`;
 
