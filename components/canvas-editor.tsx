@@ -71,7 +71,7 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
   }
 
   return (
-    <div className="flex h-full min-h-0 flex-col">
+    <div className="flex min-h-full flex-col pb-16">
       <input
         value={doc.title}
         disabled={disabled}
@@ -83,10 +83,10 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
           })
         }
         placeholder="Grounding title"
-        className="w-full border-0 border-b border-zinc-200 bg-transparent px-0 py-2 text-lg font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:text-zinc-50"
+        className="w-full shrink-0 border-0 border-b border-zinc-200 bg-transparent px-0 py-2 text-lg font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:text-zinc-50"
       />
 
-      <div className="flex flex-wrap items-center gap-1 border-b border-zinc-200 py-2 dark:border-zinc-800">
+      <div className="flex shrink-0 flex-wrap items-center gap-1 border-b border-zinc-200 py-2 dark:border-zinc-800">
         {(
           [
             { label: "Bold", icon: Bold, run: toolbar("bold") },
@@ -152,7 +152,8 @@ export function CanvasEditor({ doc, onChange, disabled }: Props) {
         onInput={emitFromEditor}
         onBlur={emitFromEditor}
         className={cn(
-          "prose-canvas min-h-0 flex-1 overflow-y-auto py-3 text-sm leading-relaxed text-zinc-800 outline-none dark:text-zinc-100",
+          // Grow with content like a long notepad; the side pane ScrollArea scrolls.
+          "prose-canvas min-h-[70vh] grow py-3 text-sm leading-relaxed text-zinc-800 outline-none dark:text-zinc-100",
           "[&_h1]:mb-2 [&_h1]:text-xl [&_h1]:font-semibold",
           "[&_h2]:mb-2 [&_h2]:text-lg [&_h2]:font-semibold",
           "[&_h3]:mb-1.5 [&_h3]:text-base [&_h3]:font-semibold",

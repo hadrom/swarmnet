@@ -194,8 +194,8 @@ export function canvasConvergenceStatus(doc: CanvasDoc): {
 }
 
 /**
- * half = short journal entry from the first stretch of the elaborate
- * full = longer journal entry from more of the elaborate
+ * half = short excerpt from the start of the elaborate
+ * full = the entire elaborate reply (no truncation)
  */
 export type PromoteBriefMode = "half" | "full" | "bottom" | "unknowns";
 
@@ -206,28 +206,83 @@ function appendJournalEntry(bodyHtml: string, entryHtml: string): string {
   return `${base}${chunk}`;
 }
 
-function markdownToJournalParagraphs(markdown: string, maxChars: number): string {
-  const plain = markdown
-    .replace(/^#{1,6}\s+/gm, "")
-    .replace(/\s+/g, " ")
-    .trim()
-    .slice(0, maxChars);
-  if (!plain) return "";
-  // Split into ~sentence-sized paragraphs for the journal.
-  const chunks = plain.match(/[^.!?]+[.!?]+|[^.!?]+$/g) ?? [plain];
-  const paras: string[] = [];
-  let buf = "";
-  for (const chunk of chunks) {
-    const next = `${buf}${chunk}`.trim();
-    if (next.length > 220 && buf) {
-      paras.push(`<p>${escapeHtml(buf.trim())}</p>`);
-      buf = chunk;
-    } else {
-      buf = next;
+/** Soft truncate at a paragraph or sentence boundary when possible. */
+function softTruncate(text: string, maxChars: number): string {
+  const trimmed = text.trim();
+  if (trimmed.length <= maxChars) return trimmed;
+  const sliced = trimmed.slice(0, maxChars);
+  const breakAt = Math.max(
+    sliced.lastIndexOf("\n\n"),
+    sliced.lastIndexOf(". "),
+    sliced.lastIndexOf("! "),
+    sliced.lastIndexOf("? "),
+  );
+  if (breakAt > maxChars * 0.4) {
+    return sliced.slice(0, breakAt + 1).trim();
+  }
+  return sliced.trim();
+}
+
+function inlineMarkdownHtml(escaped: string): string {
+  return escaped
+    .replace(/\*\*([^*]+)\*\*/g, "<strong>$1</strong>")
+    .replace(/\*([^*]+)\*/g, "<em>$1</em>");
+}
+
+/** Convert light elaborate markdown into journal HTML. Preserves paragraphs/lists. */
+function markdownToJournalHtml(
+  markdown: string,
+  maxChars?: number,
+): string {
+  const source =
+    maxChars != null ? softTruncate(markdown, maxChars) : markdown.trim();
+  if (!source) return "";
+
+  const blocks = source.split(/\n\n+/);
+  const parts: string[] = [];
+
+  for (const block of blocks) {
+    const lines = block
+      .split("\n")
+      .map((l) => l.trimEnd())
+      .filter((l) => l.trim().length > 0);
+    if (lines.length === 0) continue;
+
+    const bulletish = lines.every((l) => /^[-*•]\s+/.test(l.trim()));
+    if (bulletish) {
+      const items = lines.map((l) => {
+        const raw = l.trim().replace(/^[-*•]\s+/, "");
+        return `<li>${inlineMarkdownHtml(escapeHtml(raw))}</li>`;
+      });
+      parts.push(`<ul>${items.join("")}</ul>`);
+      continue;
+    }
+
+    const heading = lines[0].match(/^(#{1,3})\s+(.*)$/);
+    if (heading) {
+      const level = Math.min(heading[1].length + 1, 3); // h2–h4 feel right in journal
+      const tag = `h${level}` as const;
+      parts.push(
+        `<${tag}>${inlineMarkdownHtml(escapeHtml(heading[2].trim()))}</${tag}>`,
+      );
+      const rest = lines
+        .slice(1)
+        .join(" ")
+        .replace(/\s+/g, " ")
+        .trim();
+      if (rest) {
+        parts.push(`<p>${inlineMarkdownHtml(escapeHtml(rest))}</p>`);
+      }
+      continue;
+    }
+
+    const plain = lines.join(" ").replace(/\s+/g, " ").trim();
+    if (plain) {
+      parts.push(`<p>${inlineMarkdownHtml(escapeHtml(plain))}</p>`);
     }
   }
-  if (buf.trim()) paras.push(`<p>${escapeHtml(buf.trim())}</p>`);
-  return paras.join("");
+
+  return parts.join("");
 }
 
 /** Append an Elaborate reply into the Grounding journal as a new trail entry. */
@@ -236,13 +291,18 @@ export function promoteBriefIntoCanvas(
   brief: SavedBrief,
   mode: PromoteBriefMode,
 ): CanvasDoc {
+  // Full keeps the entire elaborate. Half is a short lead-in excerpt.
   const maxChars =
-    mode === "full" ? 900 : mode === "half" || mode === "bottom" ? 380 : 280;
-  const body = markdownToJournalParagraphs(brief.markdown, maxChars);
+    mode === "full" ? undefined : mode === "half" || mode === "bottom" ? 420 : 280;
+  const body = markdownToJournalHtml(brief.markdown, maxChars);
   const header = `<p><strong>From elaborate · ${escapeHtml(brief.title)}</strong></p>`;
   const entry = body
     ? `${header}${body}`
-    : `${header}<p>${escapeHtml(brief.markdown.slice(0, maxChars))}</p>`;
+    : `${header}<p>${escapeHtml(
+        maxChars != null
+          ? softTruncate(brief.markdown, maxChars)
+          : brief.markdown.trim(),
+      )}</p>`;
   const bodyHtml = appendJournalEntry(doc.bodyHtml, entry);
   return applyCanvasOps(doc, [{ op: "setBodyHtml", html: bodyHtml }]);
 }

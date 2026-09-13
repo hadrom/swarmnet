@@ -1009,7 +1009,7 @@ export default function Home() {
                       disabled={busy}
                       onClick={() => promoteBrief("half")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append a short journal entry from this brief"
+                      title="Append a short excerpt from this elaborate"
                     >
                       Half
                     </Button>
@@ -1020,7 +1020,7 @@ export default function Home() {
                       disabled={busy}
                       onClick={() => promoteBrief("full")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append a fuller journal entry from this brief"
+                      title="Append the entire elaborate reply into Grounding"
                     >
                       Full
                     </Button>

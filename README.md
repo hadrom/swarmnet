@@ -31,8 +31,8 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 Elaborate replies are deeper reads, not source of truth. From an open elaborate:
 
-- **Half** — append a short journal entry from the start of the elaborate  
-- **Full** — append a longer slice of the same reply  
+- **Half** — append a short excerpt from the start of the elaborate  
+- **Full** — append the entire elaborate reply (nothing truncated) 
 
 ### Grounding (journal lane)
 
