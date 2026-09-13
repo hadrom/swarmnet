@@ -130,47 +130,39 @@ export function mockCanvasEdit(
   message: string,
   doc: CanvasDoc,
 ): CanvasEditResponse {
-  const topic = message.replace(/\s+/g, " ").trim().slice(0, 72);
+  const topic = message.replace(/\s+/g, " ").trim().slice(0, 160);
   const empty = !doc.bodyText.trim();
-  if (empty || /draft|write|start|create|canvas/i.test(message)) {
+  if (empty || /draft|write|start|create|journal|grounding|canvas/i.test(message)) {
     const title =
-      doc.title === "Untitled canvas" || doc.title === "Working note"
-        ? topic || "Working note"
+      !doc.title ||
+      /untitled|working note|grounding journal/i.test(doc.title)
+        ? topic.slice(0, 72) || "Grounding journal"
         : doc.title;
-    const html = `<h2>Bottom line</h2><p>${topic || "Scoped decision note."}</p><h2>Decisions</h2><ul><li><em>Nothing locked yet.</em></li></ul><h2>Open questions</h2><ul><li>What should we lock before acting?</li></ul><h2>Notes</h2><ul><li>Seeded from consult.</li><li>Edit freely or ask for changes.</li></ul>`;
+    const html = `<p><em>Journal opened.</em></p><hr/><p>${topic || "Conversation started."}</p>`;
     return {
-      reply: `Drafted a working canvas${title ? ` titled “${title}”` : ""}. Lock decisions or tell me what to change.`,
+      reply: `Opened the grounding journal as “${title}”. Keep talking and I will extend the trail.`,
       ops: [
         { op: "setTitle", title },
         { op: "setBodyHtml", html },
       ],
     };
   }
-  if (/settled|decided|lock|agree/i.test(message)) {
-    return {
-      reply: `Logged that under Decisions and cleared the placeholder. Say if an open question should come off the list.`,
-      ops: [
-        {
-          op: "replaceText",
-          find: "Nothing locked yet.",
-          replace: topic || "Decision captured from chat.",
-        },
-      ],
-    };
-  }
   if (/title|rename|call it/i.test(message)) {
-    const title = topic.replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, "").slice(0, 80) || "Working note";
+    const title =
+      topic
+        .replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, "")
+        .slice(0, 80) || "Grounding journal";
     return {
-      reply: `Renamed the canvas to “${title}”.`,
+      reply: `Renamed the journal to “${title}”.`,
       ops: [{ op: "setTitle", title }],
     };
   }
   return {
-    reply: `Appended a note from your latest ask. Say if you want a tighter rewrite of a section.`,
+    reply: `Appended that to the grounding journal. Disagree, correct me, or keep going.`,
     ops: [
       {
         op: "appendHtml",
-        html: `<h3>Update</h3><p>${topic}</p>`,
+        html: `<hr/><p>${topic}</p>`,
       },
     ],
   };

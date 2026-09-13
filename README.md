@@ -4,9 +4,9 @@ Local prototype for cofounder demos. The core mix is:
 
 - **Consult** — short answers on a clean spine  
 - **Elaborate** — disposable deep read on one answer  
-- **Grounding** — writable ground-truth doc you cross-check (and chat can patch)
+- **Grounding** — a living journal that grows as you talk (agreements, clashes, corrections)
 
-Gemini is a disposable stand-in for an on-prem model. Discuss was removed as a separate lane — Grounding is the only sediment surface.
+Gemini is a disposable stand-in for an on-prem model.
 
 ## Run
 
@@ -22,31 +22,29 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Consult
 
-- Short answers on the main spine; chips send **consult follow-ups** (stay on the spine)
+- Short answers on the main spine; chips send **consult follow-ups**
+- Three suggested topics are **randomized on each page load** (any walk of life)
 - **Elaborate** opens one brief on the side; deeper **angles** live as chips inside that brief
-- **Grounding** opens the ground-truth document beside consult
+- **Grounding** opens the journal beside consult
 
 ### Elaborate → Grounding
 
-Briefs are deep reads, not source of truth. From an open brief, add keepers into Grounding:
+Briefs are deep reads, not source of truth. From an open brief:
 
-- **Half** — bottom line + open questions  
-- **Full** — bottom line + open questions + detail/depends into notes  
+- **Half** — append a short journal entry (bottom line + open threads)  
+- **Full** — append a richer entry including detail  
 
-Then continue editing Grounding (manually or via chat).
-
-### Grounding (ground-truth lane)
+### Grounding (journal lane)
 
 1. Click **Grounding** on an answer (or reopen from the header) — opens for **reading**; chat still consults
-2. Doc seeds with **Bottom line / Decisions / Open questions / Notes**
+2. Doc seeds as an open journal (no fixed sections). It grows like an RPG trail
 3. Edit with the toolbar yourself, or click **Edit with chat** to arm the composer
-4. While armed, sky chrome shows on header + composer; turns patch the doc (no Elaborate chips on those replies)
+4. While armed, sky chrome shows; turns **append** to the journal (agreements, disagreements, and “you’re wrong because…” live in the trail itself — not special subtitles)
 5. **Back to consult** / **Stop editing** disarms — Grounding can stay open while you ask normal questions
-6. When you settle something in chat, the model should move it into **Decisions** and clear it from **Open questions**
-7. Status chrome shows `N decided · M open`
-8. Hide anytime — the doc persists with the session until **New chat**
+6. Status chrome shows entry count
+7. Hide anytime — the journal persists with the session until **New chat**
 
-Persistence: `two-lane-session-v7` (consult + grounding + edit-armed flag).
+Persistence: `two-lane-session-v8` (consult + grounding journal + edit-armed flag).
 
 ## Models
 
@@ -59,11 +57,11 @@ Persistence: `two-lane-session-v7` (consult + grounding + edit-armed flag).
 
 ## Demo script
 
-1. Click a starter (and maybe a chip follow-up).
-2. **Elaborate** — skim angles; **Half → Grounding** (or **Full**).
-3. With Grounding open (still consulting), arm **Edit with chat**, then ask to lock a decision or add an open question.
-4. Disarm and ask a normal consult question — Grounding stays visible.
-5. Edit the doc yourself; confirm the status chips move.
+1. Refresh — note three new starter topics.
+2. Click a starter (and maybe a chip follow-up).
+3. **Elaborate** — skim angles; **Half → Grounding**.
+4. Arm **Edit with chat**, then disagree or lock something — watch the journal grow.
+5. Disarm and ask a normal consult question — Grounding stays visible.
 6. **New chat** for a clean slate.
 
 ## Swap to on-prem later

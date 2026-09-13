@@ -78,14 +78,54 @@ Rules:
 - Do not invent new topics or fake agreements.
 - note: one sentence on what you cleaned up.`;
 
-export const CONSULT_STARTERS = [
-  "We had a partial outage on the payment webhook for 14 minutes. Should we page the customer success lead or keep it engineering-only?",
+export const CONSULT_STARTER_POOL = [
+  "We had a partial outage on the payment webhook for 14 minutes. Should we page customer success or keep it engineering-only?",
   "Our vendor SLA is 99.9%. We measured 99.2% last quarter. What should we ask for in the next renewal?",
   "A junior engineer wants to ship an LLM into the incident triage bot. What is the smallest safe trial?",
+  "My landlord raised rent 18% with 30 days' notice. Do I negotiate, document, or start looking?",
+  "The school board wants phones banned during the day. What policy actually sticks without a rebellion?",
+  "We got a verbal yes from a key hire, then they went quiet for a week. How hard do we chase?",
+  "A patient keeps asking for antibiotics for a viral cold. How do I refuse without losing trust?",
+  "Our open kitchen keeps running out of the same two specials by 7pm. Cut them, raise price, or prep more?",
+  "The HOA wants to ban short-term rentals. We bought for Airbnb income. What's the least-bad move?",
+  "My teenager crashed the car with no injuries. Insurance, consequences, or both — and in what order?",
+  "A competitor just published our pricing sheet from a leaked deck. Respond publicly or ignore?",
+  "We're three weeks from a trail race and I tweaked my knee. Push through, swap to shorter, or DNS?",
+  "The museum wants a 'viral' exhibit on a shoestring. What's worth doing vs. embarrassing?",
+  "Our nonprofit board is split on accepting a gift from a controversial donor. Frame the decision.",
+  "I found mold behind the drywall after a slow leak. Temporary patch or open the wall this week?",
+  "A bandmate wants to soft-launch AI-generated merch art. Cool experiment or brand poison?",
+  "The city council hearing is Thursday and we have one speaking slot. What's the tightest ask?",
+  "My co-founder wants to pivot to B2B mid-seed. I still believe in consumer. How do we decide?",
+  "We promised same-day delivery and a storm grounded the courier fleet. Who gets told what, first?",
+  "A neighbor's tree is dropping limbs on our garage. Friendly note, arborist quote, or formal notice?",
+  "The chef wants a tasting menu; the GM wants high-turn comfort food. How do we pick for Q4?",
+  "I got offered equity instead of a raise. What questions should I ask before saying yes?",
+  "Our church youth trip has more kids than chaperones. Cancel, shrink, or scramble for parents?",
+  "A research paper reviewer says our method is 'underpowered.' Fix, reframe, or appeal?",
+  "The farm CSA overpromised boxes this week. Partial refunds, substitutions, or both?",
+  "My parents want me to move home to help with care. Career stalls either way — how to weigh it?",
+  "We're casting a community play and two friends are both wrong for the lead. Honesty or politics?",
+  "The union is asking for a 4-day week in negotiations. What's a credible counter without a fight?",
+  "A viral TikTok accused our café of being rude. The clip is edited. Reply, ignore, or invite them back on camera?",
+  "I need to tell a long-time client we're raising rates 20%. Structure the conversation.",
 ];
 
-export const CANVAS_SYSTEM = `You help maintain a living ground-truth document ("Grounding") beside consult chat.
-Grounding is what the user cross-checks — not a side memo. Prefer editing the doc over long chat answers.
+/** Pick `count` distinct starters at random (client refresh reshuffles). */
+export function pickConsultStarters(count = 3): string[] {
+  const pool = [...CONSULT_STARTER_POOL];
+  for (let i = pool.length - 1; i > 0; i--) {
+    const j = Math.floor(Math.random() * (i + 1));
+    [pool[i], pool[j]] = [pool[j], pool[i]];
+  }
+  return pool.slice(0, Math.min(count, pool.length));
+}
+
+/** @deprecated Prefer pickConsultStarters — static list kept for imports. */
+export const CONSULT_STARTERS = CONSULT_STARTER_POOL.slice(0, 3);
+
+export const CANVAS_SYSTEM = `You help maintain a living journal called "Grounding" beside consult chat.
+Grounding is an open, growing trail of the exchange — like an RPG journal that expands as the conversation happens. It is NOT a form with fixed sections.
 
 Return ONLY valid JSON:
 {
@@ -99,19 +139,20 @@ CanvasOp is one of:
   { "op": "appendHtml", "html": string }
   { "op": "replaceText", "find": string, "replace": string }
 
-Preferred grounding skeleton (keep these h2 headings when present):
-  Bottom line — current held truth
-  Decisions — locked agreements (bullets)
-  Open questions — unresolved items (bullets)
-  Notes — scratch context
+Document shape:
+- Freeform chronological prose. Prefer appending new entries with <hr/> then <p>...</p>.
+- Do NOT invent section headings like Bottom line, Decisions, Open questions, or Notes.
+- No special subtitles for "agreed" / "disagreed" — weave that into the journal prose itself.
 
 Rules:
-- reply: ONE short paragraph (max ~60 words) saying what you changed. Blunt consult voice. Do not paste the whole document.
-- Prefer surgical ops: replaceText / appendHtml / setTitle. Use setBodyHtml / setBodyText only for larger rewrites or empty docs.
-- body HTML may use: <p>, <h1>, <h2>, <h3>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <br>. No scripts, styles, or classes.
-- When the user settles something: put it under Decisions and remove it from Open questions (replaceText/appendHtml as needed). Remove placeholder italics like "Nothing locked yet."
-- When something is still fuzzy: add/update a bullet under Open questions instead of hedging only in chat.
-- Preserve user wording on small edits. Keep the doc operational and concise.
-- If they ask a normal consult question that should NOT change the doc, return ops: [] and answer in reply.
-- If the grounding doc is empty / placeholder-only and they ask to draft, create the skeleton above with a sensible title.`;
+- reply: ONE short paragraph (max ~60 words) saying what you added or changed. Blunt consult voice. Do not paste the whole journal.
+- Prefer appendHtml for new trail entries. Use replaceText for tiny fixes. Use setBodyHtml only if the doc is empty or a full rewrite is clearly needed.
+- body HTML may use: <p>, <hr>, <ul>, <ol>, <li>, <strong>, <em>, <u>, <br>, and occasional <h3> only if the user asks. No scripts, styles, or classes.
+- When you settle something together: append an entry that records what you landed on.
+- When you disagree: append an entry that captures both sides of the clash.
+- When you think the user is wrong: write that into the journal with why — not only in chat. Be direct, not theatrical.
+- Capture what the ongoing discussion amounts to so far; the trail should make sense if reread alone.
+- Preserve earlier entries. Grow the journal; do not erase history unless the user asks to rewrite.
+- If they ask a normal consult question that should NOT change the journal, return ops: [] and answer in reply.
+- If the journal is empty and they ask to start, open with a short first entry (no section skeleton).`;
 

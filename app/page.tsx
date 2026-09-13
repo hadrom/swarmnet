@@ -17,7 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CanvasEditor } from "@/components/canvas-editor";
-import { CONSULT_STARTERS } from "@/lib/prompts";
+import { pickConsultStarters } from "@/lib/prompts";
 import type {
   CanvasDoc,
   Hook,
@@ -27,15 +27,16 @@ import type {
 } from "@/lib/types";
 import {
   FULL_BRIEF_KEY,
-  canvasConvergenceStatus,
+  canvasJournalStatus,
   promoteBriefIntoCanvas,
   seedWorkingCanvas,
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Consult spine + Grounding doc. Discuss removed. */
-const STORAGE_KEY = "two-lane-session-v7";
+/** Consult spine + Grounding journal. */
+const STORAGE_KEY = "two-lane-session-v8";
 const LEGACY_KEYS = [
+  "two-lane-session-v7",
   "two-lane-session-v6",
   "two-lane-session-v5",
   "two-lane-session-v4",
@@ -167,6 +168,7 @@ export default function Home() {
   const [canvasEpoch, setCanvasEpoch] = useState(0);
   const [groundingEditing, setGroundingEditing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
+  const [starters, setStarters] = useState<string[]>([]);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -187,6 +189,7 @@ export default function Home() {
         setGroundingEditing(false);
       }
     }
+    setStarters(pickConsultStarters(3));
     setHydrated(true);
   }, []);
 
@@ -223,7 +226,7 @@ export default function Home() {
   const editingGrounding = showGroundingPane && groundingEditing;
   const showSidePane = showBriefPane || showGroundingPane;
   const groundingStatus = useMemo(
-    () => (canvas ? canvasConvergenceStatus(canvas) : null),
+    () => (canvas ? canvasJournalStatus(canvas) : null),
     [canvas],
   );
   const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
@@ -686,12 +689,12 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Elaborate is a deep read. Grounding is the checked ledger
-                    you and chat edit toward decisions.
+                    Elaborate is a deep read. Grounding is a living journal
+                    that grows as you talk — agreements, clashes, and corrections.
                   </p>
                 </div>
                 <div className="flex flex-col gap-2">
-                  {CONSULT_STARTERS.map((s) => (
+                  {starters.map((s) => (
                     <button
                       key={s}
                       type="button"
@@ -772,7 +775,7 @@ export default function Home() {
                     Edit with chat · armed
                   </p>
                   <p className="truncate text-[11px] text-sky-100/90">
-                    Your next message patches Grounding — not a consult answer
+                    Your next message extends the Grounding journal — not a consult answer
                   </p>
                 </div>
                 <Button
@@ -795,7 +798,7 @@ export default function Home() {
                     Grounding open · reading
                   </p>
                   <p className="truncate text-[11px] text-sky-800/80 dark:text-sky-200/80">
-                    Chat still consults — arm Edit with chat to patch the doc
+                    Chat still consults — arm Edit with chat to extend the journal
                   </p>
                 </div>
                 <Button
@@ -875,12 +878,12 @@ export default function Home() {
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {showBriefPane
-                    ? "Deep read — add keepers into Grounding"
+                    ? "Deep read — append keepers into the Grounding journal"
                     : editingGrounding
                       ? "Composer is locked onto this doc until you disarm"
                       : groundingStatus
-                        ? `${groundingStatus.decisions} decided · ${groundingStatus.open} open — read or edit yourself`
-                        : "Ground-truth doc — edit here; arm chat to patch"}
+                        ? `${groundingStatus.entries} ${groundingStatus.entries === 1 ? "entry" : "entries"} · journal grows as you talk`
+                        : "Open journal — edit here; arm chat to extend the trail"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
@@ -1006,7 +1009,7 @@ export default function Home() {
                       disabled={busy}
                       onClick={() => promoteBrief("half")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Bottom line + open questions"
+                      title="Append a short journal entry from this brief"
                     >
                       Half
                     </Button>
@@ -1017,7 +1020,7 @@ export default function Home() {
                       disabled={busy}
                       onClick={() => promoteBrief("full")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Full brief into grounding sections"
+                      title="Append a fuller journal entry from this brief"
                     >
                       Full
                     </Button>
