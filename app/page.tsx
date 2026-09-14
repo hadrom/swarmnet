@@ -769,7 +769,12 @@ export default function Home() {
                       Full
                     </Button>
                   </div>
-                  <SimpleMarkdown text={activeBrief.brief.markdown} />
+                  <PointableAnswer
+                    disabled={busy}
+                    onAsk={(q) => void onSubmit(q)}
+                  >
+                    <SimpleMarkdown text={activeBrief.brief.markdown} />
+                  </PointableAnswer>
                 </div>
             </ScrollArea>
           </section>

@@ -1,10 +1,12 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
 import { cn } from "@/lib/utils";
 
 type Props = {
-  text: string;
+  /** Plain text answer (consult). Prefer `children` when rendering rich content. */
+  text?: string;
+  children?: ReactNode;
   disabled?: boolean;
   className?: string;
   onAsk: (question: string) => void;
@@ -92,7 +94,13 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
   return null;
 }
 
-export function PointableAnswer({ text, disabled, className, onAsk }: Props) {
+export function PointableAnswer({
+  text,
+  children,
+  disabled,
+  className,
+  onAsk,
+}: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
   const [chip, setChip] = useState<AskChip | null>(null);
@@ -203,11 +211,13 @@ export function PointableAnswer({ text, disabled, className, onAsk }: Props) {
   return (
     <div
       ref={rootRef}
-      className={cn("relative", className)}
+      className={cn("relative cursor-text", className)}
       onMouseDown={onMouseDown}
       onMouseUp={onMouseUp}
     >
-      <p className="cursor-text whitespace-pre-wrap">{text}</p>
+      {children ?? (
+        <p className="whitespace-pre-wrap">{text ?? ""}</p>
+      )}
 
       {chip ? (
         <button
