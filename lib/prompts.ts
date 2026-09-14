@@ -9,8 +9,7 @@ Return ONLY valid JSON matching this schema:
     "userJob": string
   },
   "hooks": [ { "id": string, "label": string, "why": string } ],
-  "angles": [ { "id": string, "label": string } ],
-  "hotspots": [ { "id": string, "text": string, "ask": string } ]
+  "angles": [ { "id": string, "label": string } ]
 }
 Rules:
 - answer: ONE paragraph, max ~90 words. Facts first. No greetings, no recap, no "happy to help".
@@ -26,11 +25,6 @@ Rules:
   - Keep each label under ~6 words; end with ?. Distinct forks only — no near-duplicates.
   - why: ≤8 words stating why this is a likely next click (not shown in UI).
   - These are consult navigation chips, not depth topics.
-- hotspots: 2-4 clickable phrases INSIDE the answer for type-free follow-ups.
-  - text: MUST be an exact contiguous substring of answer (same wording the user will see).
-  - ask: short follow-up QUESTION to send when that phrase is clicked (can mirror a hook).
-  - Prefer actionable nouns already in the answer (owner, kill criterion, scope, risk) — not filler words.
-  - Do not hotspot the entire sentence; keep text to 1-4 words when possible.
 - angles: 2-4 short NOUN PHRASES naming VARIATIONS of the deep read of THIS same answer (not questions, no ?). Shown only inside Depth as alternate emphases of the main deep read — not separate documents. Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
 - Never invent citations.
 - Never put variation noun phrases in hooks, and never put follow-up questions in angles.`;

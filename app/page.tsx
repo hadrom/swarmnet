@@ -340,7 +340,6 @@ export default function Home() {
       intent?: ThreadMessage["intent"];
       hooks: Hook[];
       angles?: Hook[];
-      hotspots?: ThreadMessage["hotspots"];
     };
   }
 
@@ -410,7 +409,6 @@ export default function Home() {
             intent: data.intent,
             hooks: (data.hooks ?? []).slice(0, 3),
             angles: data.angles ?? [],
-            hotspots: data.hotspots ?? [],
             briefs: {},
           },
         ]);
@@ -843,7 +841,6 @@ export default function Home() {
                         {msg.role === "assistant" && !groundingTurn ? (
                           <PointableAnswer
                             text={msg.content}
-                            hotspots={msg.hotspots}
                             disabled={busy}
                             onAsk={(q) => void onSubmit(q)}
                           />

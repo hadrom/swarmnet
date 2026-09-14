@@ -115,27 +115,6 @@ function normalizeIntent(raw: unknown): LiteResponse["intent"] | undefined {
   };
 }
 
-function normalizeHotspots(
-  raw: unknown,
-  answer: string,
-): LiteResponse["hotspots"] {
-  if (!Array.isArray(raw)) return [];
-  const lowerAnswer = answer.toLowerCase();
-  const out: NonNullable<LiteResponse["hotspots"]> = [];
-  for (let i = 0; i < raw.length && out.length < 4; i++) {
-    const obj = (raw[i] ?? {}) as Record<string, unknown>;
-    const text = String(obj.text ?? "").trim();
-    const ask = String(obj.ask ?? obj.label ?? "").trim();
-    if (text.length < 2 || ask.length < 2) continue;
-    if (!lowerAnswer.includes(text.toLowerCase())) continue;
-    out.push({
-      id: String(obj.id ?? `hot-${i}`),
-      text,
-      ask: ask.endsWith("?") ? ask : `${ask}?`,
-    });
-  }
-  return out;
-}
 
 function normalizeLite(raw: Record<string, unknown>): LiteResponse {
   const confidence =
@@ -151,7 +130,6 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
     intent: normalizeIntent(raw.intent),
     hooks: normalizeHooks(raw.hooks, 3),
     angles: normalizeHooks(raw.angles, 4),
-    hotspots: normalizeHotspots(raw.hotspots, answer),
   };
 }
 
