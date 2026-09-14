@@ -336,6 +336,7 @@ export default function Home() {
     return data as {
       answer: string;
       confidence: ThreadMessage["confidence"];
+      intent?: ThreadMessage["intent"];
       hooks: Hook[];
       angles?: Hook[];
     };
@@ -404,7 +405,8 @@ export default function Home() {
             kind: "consult",
             content: data.answer,
             confidence: data.confidence,
-            hooks: data.hooks,
+            intent: data.intent,
+            hooks: (data.hooks ?? []).slice(0, 3),
             angles: data.angles ?? [],
             briefs: {},
           },
@@ -555,16 +557,21 @@ export default function Home() {
             <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
               <MessageCircle className="h-3 w-3" />
               Ask next
+              {msg.intent?.userJob ? (
+                <span className="font-normal normal-case tracking-normal text-zinc-400">
+                  · {msg.intent.userJob}
+                </span>
+              ) : null}
             </p>
             <div className="flex flex-wrap gap-1.5">
-              {askNext.map((hook) => (
+              {askNext.slice(0, 3).map((hook) => (
                 <button
                   key={hook.id}
                   type="button"
                   disabled={busy}
                   onClick={() => onHookClick(msg, hook)}
                   className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70"
-                  title="Send this as the next consult question"
+                  title={hook.why || "Send this as the next consult question"}
                 >
                   {hook.label}
                 </button>

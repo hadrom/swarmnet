@@ -1,12 +1,30 @@
 export type Hook = {
   id: string;
   label: string;
+  /** Optional rank rationale — not shown in UI. */
+  why?: string;
+};
+
+export type ConsultIntent = {
+  /** Coarse job the user is trying to do next. */
+  primary:
+    | "decide_now"
+    | "unblock"
+    | "assess_risk"
+    | "persuade"
+    | "plan"
+    | "diagnose";
+  secondary?: string[];
+  /** Short phrase of what they're trying to accomplish. */
+  userJob: string;
 };
 
 export type LiteResponse = {
   answer: string;
   confidence: "high" | "medium" | "low";
-  /** Ask-next chips: short follow-up questions that continue consult. */
+  /** Inferred user intent used to rank Ask next. */
+  intent?: ConsultIntent;
+  /** Exactly 3 Ask-next chips, ranked most → least likely next click. */
   hooks: Hook[];
   /** Variations: noun-phrase emphases of the same deep read. */
   angles: Hook[];
@@ -58,6 +76,8 @@ export type ThreadMessage = {
   /** Routing provenance. Grounding replies hide consult action chips. */
   kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
+  intent?: LiteResponse["intent"];
+  /** Exactly 3 Ask-next chips when present, ranked most → least likely. */
   hooks?: Hook[];
   /** Variations — noun-phrase emphases shown inside Depth, not on the spine. */
   angles?: Hook[];

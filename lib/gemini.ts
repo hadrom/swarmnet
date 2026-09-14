@@ -75,15 +75,44 @@ function asStringList(v: unknown): string[] {
   return Array.isArray(v) ? v.map((x) => String(x)).filter(Boolean) : [];
 }
 
-function normalizeHooks(raw: unknown) {
+function normalizeHooks(raw: unknown, limit?: number) {
   if (!Array.isArray(raw)) return [];
-  return raw.map((h, i) => {
+  const hooks = raw.map((h, i) => {
     const obj = (h ?? {}) as Record<string, unknown>;
+    const why = obj.why != null ? String(obj.why).trim() : "";
     return {
       id: String(obj.id ?? `hook-${i}`),
       label: String(obj.label ?? obj.id ?? `Option ${i + 1}`),
+      ...(why ? { why } : {}),
     };
   });
+  return typeof limit === "number" ? hooks.slice(0, limit) : hooks;
+}
+
+const INTENT_PRIMARIES = new Set([
+  "decide_now",
+  "unblock",
+  "assess_risk",
+  "persuade",
+  "plan",
+  "diagnose",
+] as const);
+
+function normalizeIntent(raw: unknown): LiteResponse["intent"] | undefined {
+  if (!raw || typeof raw !== "object") return undefined;
+  const obj = raw as Record<string, unknown>;
+  const primaryRaw = String(obj.primary ?? "");
+  const primary = INTENT_PRIMARIES.has(primaryRaw as never)
+    ? (primaryRaw as NonNullable<LiteResponse["intent"]>["primary"])
+    : undefined;
+  const userJob = String(obj.userJob ?? obj.user_job ?? "").trim();
+  if (!primary && !userJob) return undefined;
+  const secondary = asStringList(obj.secondary).slice(0, 2);
+  return {
+    primary: primary ?? "plan",
+    ...(secondary.length ? { secondary } : {}),
+    userJob: userJob || "Move the decision forward",
+  };
 }
 
 function normalizeLite(raw: Record<string, unknown>): LiteResponse {
@@ -96,8 +125,9 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
   return {
     answer: String(raw.answer ?? ""),
     confidence,
-    hooks: normalizeHooks(raw.hooks),
-    angles: normalizeHooks(raw.angles),
+    intent: normalizeIntent(raw.intent),
+    hooks: normalizeHooks(raw.hooks, 3),
+    angles: normalizeHooks(raw.angles, 4),
   };
 }
 
@@ -195,14 +225,14 @@ export async function generateLite(input: {
     .slice(-6)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}`;
+  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}\n\nAfter writing the short answer, infer their likely next intent from the question + your answer, then return exactly 3 ranked Ask-next hooks (most → least likely click).`;
 
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(
       LITE_MODEL,
       CONSULT_LITE_SYSTEM,
       user,
-      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 400 },
+      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 550 },
     );
     return { ...normalizeLite(data), modelUsed, mocked: false };
   } catch (err) {

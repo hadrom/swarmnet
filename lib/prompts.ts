@@ -3,14 +3,28 @@ Return ONLY valid JSON matching this schema:
 {
   "answer": string,
   "confidence": "high" | "medium" | "low",
-  "hooks": [ { "id": string, "label": string } ],
+  "intent": {
+    "primary": "decide_now" | "unblock" | "assess_risk" | "persuade" | "plan" | "diagnose",
+    "secondary": string[],
+    "userJob": string
+  },
+  "hooks": [ { "id": string, "label": string, "why": string } ],
   "angles": [ { "id": string, "label": string } ]
 }
 Rules:
 - answer: ONE paragraph, max ~90 words. Facts first. No greetings, no recap, no "happy to help".
 - Prefer blunt operational language.
 - If uncertain, say what is unknown inside the paragraph and set confidence accordingly.
-- hooks: 4-6 SHORT clickable follow-up QUESTIONS for navigating consult without typing. Keep each label under ~6 words; end with ?. These are "Ask next" chips on the spine — not depth topics. Prefer punchy forks: "Who owns this?", "Rollback trigger?", "Notify customers?", "What breaks first?", "Kill criterion?".
+- intent: Infer the user's most likely job from the latest question + your answer (+ recent history).
+  - primary: one of decide_now, unblock, assess_risk, persuade, plan, diagnose
+  - userJob: ≤12 words naming what they are trying to accomplish
+  - secondary: 0-2 optional supporting intents
+- hooks: EXACTLY 3 SHORT clickable follow-up QUESTIONS ("Ask next"), ranked most → least likely for this user to click next.
+  - Derive them from THIS question + THIS answer + inferred intent — not a generic ops checklist.
+  - Prefer the forks that close the biggest open gap your answer just created (owner, timing, risk, choice, objection).
+  - Keep each label under ~6 words; end with ?. Distinct forks only — no near-duplicates.
+  - why: ≤8 words stating why this is a likely next click (not shown in UI).
+  - These are consult navigation chips, not depth topics.
 - angles: 2-4 short NOUN PHRASES naming VARIATIONS of the deep read of THIS same answer (not questions, no ?). Shown only inside Depth as alternate emphases of the main deep read — not separate documents. Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
 - Never invent citations.
 - Never put variation noun phrases in hooks, and never put follow-up questions in angles.`;

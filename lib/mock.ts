@@ -13,12 +13,27 @@ export function mockLite(question: string): LiteResponse {
   return {
     answer: `Compressed take: treat this as a scoped decision, not a platform project. For “${short}${question.length > 80 ? "…" : ""}”, ship the smallest reversible step, name the owner, and set a kill criterion before expanding scope.`,
     confidence: "medium",
+    intent: {
+      primary: "decide_now",
+      secondary: ["plan"],
+      userJob: "Pick the smallest safe next move",
+    },
     hooks: [
-      { id: "owner", label: "Who owns this?" },
-      { id: "rollback", label: "Rollback trigger?" },
-      { id: "notify", label: "Notify customers?" },
-      { id: "break", label: "What breaks first?" },
-      { id: "kill", label: "Kill criterion?" },
+      {
+        id: "owner",
+        label: "Who owns this?",
+        why: "Answer left ownership open",
+      },
+      {
+        id: "kill",
+        label: "Kill criterion?",
+        why: "Needs a stop condition",
+      },
+      {
+        id: "scope",
+        label: "What's in v1?",
+        why: "Scope is still fuzzy",
+      },
     ],
     angles: [
       { id: "risks", label: "Failure modes" },
