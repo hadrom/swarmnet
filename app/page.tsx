@@ -17,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CanvasEditor } from "@/components/canvas-editor";
+import { PointableAnswer } from "@/components/pointable-answer";
 import { pickConsultStarters } from "@/lib/prompts";
 import type {
   CanvasDoc,
@@ -339,6 +340,7 @@ export default function Home() {
       intent?: ThreadMessage["intent"];
       hooks: Hook[];
       angles?: Hook[];
+      hotspots?: ThreadMessage["hotspots"];
     };
   }
 
@@ -408,6 +410,7 @@ export default function Home() {
             intent: data.intent,
             hooks: (data.hooks ?? []).slice(0, 3),
             angles: data.angles ?? [],
+            hotspots: data.hotspots ?? [],
             briefs: {},
           },
         ]);
@@ -837,7 +840,16 @@ export default function Home() {
                             "ring-2 ring-zinc-900 dark:ring-zinc-100",
                         )}
                       >
-                        {msg.content}
+                        {msg.role === "assistant" && !groundingTurn ? (
+                          <PointableAnswer
+                            text={msg.content}
+                            hotspots={msg.hotspots}
+                            disabled={busy}
+                            onAsk={(q) => void onSubmit(q)}
+                          />
+                        ) : (
+                          msg.content
+                        )}
                       </div>
                       {renderMessageActions(msg)}
                     </div>

@@ -19,6 +19,15 @@ export type ConsultIntent = {
   userJob: string;
 };
 
+/** In-answer phrase you can click like an Ask-next hook. */
+export type AnswerHotspot = {
+  id: string;
+  /** Exact substring that appears in `answer` (case-insensitive match OK). */
+  text: string;
+  /** Consult question to send when the phrase is clicked. */
+  ask: string;
+};
+
 export type LiteResponse = {
   answer: string;
   confidence: "high" | "medium" | "low";
@@ -28,6 +37,8 @@ export type LiteResponse = {
   hooks: Hook[];
   /** Variations: noun-phrase emphases of the same deep read. */
   angles: Hook[];
+  /** 2-4 clickable phrases inside the answer for type-free follow-ups. */
+  hotspots?: AnswerHotspot[];
 };
 
 export type BriefResponse = {
@@ -81,6 +92,8 @@ export type ThreadMessage = {
   hooks?: Hook[];
   /** Variations — noun-phrase emphases shown inside Depth, not on the spine. */
   angles?: Hook[];
+  /** Clickable in-answer phrases that send a consult follow-up. */
+  hotspots?: AnswerHotspot[];
   /** Saved deep reads for this answer. Key is lens id, or "full". */
   briefs?: Record<string, SavedBrief>;
 };

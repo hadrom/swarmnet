@@ -35,6 +35,23 @@ export function mockLite(question: string): LiteResponse {
         why: "Scope is still fuzzy",
       },
     ],
+    hotspots: [
+      {
+        id: "hs-owner",
+        text: "owner",
+        ask: "Who owns this?",
+      },
+      {
+        id: "hs-kill",
+        text: "kill criterion",
+        ask: "What's the kill criterion?",
+      },
+      {
+        id: "hs-step",
+        text: "reversible step",
+        ask: "What's the smallest reversible step?",
+      },
+    ],
     angles: [
       { id: "risks", label: "Failure modes" },
       { id: "deps", label: "Dependencies" },
