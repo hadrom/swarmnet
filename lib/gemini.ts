@@ -221,7 +221,7 @@ export async function generateBrief(input: {
     .slice(-12)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Conversation so far (established context — treat earlier turns as given):\n${historyBlock || "(none)"}\n\nTrigger question for this brief:\n${input.question}\n\nLite answer being expanded:\n${input.liteAnswer}\n\nFocus hook:\n${input.hookLabel ?? "(full elaborate)"}`;
+  const user = `Conversation so far (established context — treat earlier turns as given):\n${historyBlock || "(none)"}\n\nTrigger question for this brief:\n${input.question}\n\nLite answer being expanded:\n${input.liteAnswer}\n\nVariation focus (reweight the same deep read; blank = main):\n${input.hookLabel ?? "(main deep read)"}`;
 
   try {
     const { data, modelUsed } = await generateJson<{ markdown?: string }>(

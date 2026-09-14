@@ -3,7 +3,7 @@
 Local prototype for cofounder demos. The core mix is:
 
 - **Consult** — short answers on a clean spine, steered by **Ask next** chips  
-- **Depth** — disposable deep read on one answer, switched by **Lenses**  
+- **Depth** — disposable deep read on one answer, switched by **Variations**  
 - **Grounding** — a living journal that grows as you talk (agreements, clashes, corrections)
 
 Gemini is a disposable stand-in for an on-prem model.
@@ -25,7 +25,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 - Short answers on the main spine
 - **Ask next** chips under an answer send follow-up questions (navigate without typing)
 - Three suggested topics are **randomized on each page load** (any walk of life)
-- **Read deeper** opens **Depth** to the **left of consult**; **Lenses** switch facets of that same answer (tabs, not chat chips)
+- **Read deeper** opens **Depth** to the **left of consult**; **Variations** reweight that same deep read (Main + facet tabs — not chat chips)
 - **Grounding** stays on the **right** and can stay open while you read deeper
 
 ### Depth → Grounding
@@ -60,7 +60,7 @@ Persistence: `two-lane-session-v9` (consult + grounding journal + edit-armed fla
 
 1. Refresh — note three new starter topics.
 2. Click a starter (and maybe a chip follow-up).
-3. **Read deeper** — switch **Lenses**; **Half → Grounding**.
+3. **Read deeper** — switch **Variations**; **Half → Grounding**.
 4. Arm **Edit with chat**, then disagree or lock something — watch the journal grow.
 5. Disarm and ask a normal consult question — Grounding stays visible.
 6. **New chat** for a clean slate.

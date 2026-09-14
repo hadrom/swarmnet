@@ -4,7 +4,6 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   BookOpen,
-  ChevronRight,
   FileText,
   Loader2,
   MessageCircle,
@@ -451,7 +450,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brief failed");
       saveBriefOnMessage(msg.id, key, {
-        title: hook?.label ?? "Full read",
+        title: hook?.label ?? "Main",
         markdown: data.markdown,
         hookId: hook?.id,
       });
@@ -504,7 +503,6 @@ export default function Home() {
       );
     }
 
-    const savedEntries = Object.entries(msg.briefs ?? {});
     const isBriefSource =
       showBriefPane && openBrief?.messageId === msg.id;
     const askNext = msg.hooks ?? [];
@@ -529,17 +527,10 @@ export default function Home() {
             )}
             title="Open a deeper read of this answer"
           >
-            {msg.briefs?.[FULL_BRIEF_KEY] ? (
-              <>
-                <BookOpen className="h-3 w-3" />
-                Open depth
-              </>
-            ) : (
-              <>
-                <BookOpen className="h-3 w-3" />
-                Read deeper
-              </>
-            )}
+            <>
+              <BookOpen className="h-3 w-3" />
+              Read deeper
+            </>
           </button>
 
           <button
@@ -582,21 +573,6 @@ export default function Home() {
           </div>
         ) : null}
 
-        {savedEntries.length > 1 ? (
-          <div className="flex flex-wrap gap-1">
-            {savedEntries.map(([key, brief]) => (
-              <button
-                key={key}
-                type="button"
-                onClick={() => openSavedBrief(msg.id, key)}
-                className="inline-flex items-center gap-1 rounded-md px-1.5 py-0.5 text-[10px] text-zinc-500 hover:bg-zinc-100 hover:text-zinc-800 dark:hover:bg-zinc-800 dark:hover:text-zinc-200"
-              >
-                <ChevronRight className="h-3 w-3" />
-                {brief.title}
-              </button>
-            ))}
-          </div>
-        ) : null}
       </div>
     );
   }
@@ -634,7 +610,7 @@ export default function Home() {
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {editingGrounding
                 ? "Composer targets Grounding — turn off Edit with chat to consult again."
-                : "Consult for short answers. Ask next to steer. Read deeper for lenses. Grounding is ground truth."}
+                : "Consult for short answers. Ask next to steer. Read deeper for variations. Grounding is ground truth."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -685,7 +661,7 @@ export default function Home() {
                   Depth · {activeBrief.brief.title}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  Deep read left of consult — lenses swap facets; Half / Full append into Grounding
+                  Deep read left of consult — Variations reweight this answer; Half / Full append into Grounding
                 </p>
               </div>
               <Button
@@ -710,7 +686,7 @@ export default function Home() {
                     return (
                       <div className="space-y-1.5">
                         <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                          Lenses
+                          Variations
                         </p>
                         <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5 dark:border-zinc-700 dark:bg-zinc-900/80">
                           <button
@@ -723,12 +699,12 @@ export default function Home() {
                                 ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
                                 : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
                             )}
-                            title="Unscoped deep read of this answer"
+                            title="Main deep read of this answer"
                           >
                             {fullSaved ? (
                               <FileText className="h-3 w-3" />
                             ) : null}
-                            Full read
+                            Main
                           </button>
                           {angles.map((angle) => {
                             const saved = src.briefs?.[angle.id];
@@ -747,7 +723,7 @@ export default function Home() {
                                     ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
                                     : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
                                 )}
-                                title="Deep read through this lens"
+                                title="Same deep read, reweighted toward this facet"
                               >
                                 {saved ? <FileText className="h-3 w-3" /> : null}
                                 {angle.label}
@@ -808,7 +784,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Ask next steers consult. Read deeper opens lenses. Grounding is a living journal
+                    Ask next steers consult. Read deeper opens variations. Grounding is a living journal
                     that grows as you talk — agreements, clashes, and corrections.
                   </p>
                 </div>

@@ -8,7 +8,7 @@ export type LiteResponse = {
   confidence: "high" | "medium" | "low";
   /** Ask-next chips: short follow-up questions that continue consult. */
   hooks: Hook[];
-  /** Lenses: noun-phrase facets for scoped deep reads of this same answer. */
+  /** Variations: noun-phrase emphases of the same deep read. */
   angles: Hook[];
 };
 
@@ -59,7 +59,7 @@ export type ThreadMessage = {
   kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
   hooks?: Hook[];
-  /** Lenses — noun-phrase deep-read facets shown inside Elaborate, not on the spine. */
+  /** Variations — noun-phrase emphases shown inside Depth, not on the spine. */
   angles?: Hook[];
   /** Saved deep reads for this answer. Key is lens id, or "full". */
   briefs?: Record<string, SavedBrief>;
