@@ -6,9 +6,9 @@ export type Hook = {
 export type LiteResponse = {
   answer: string;
   confidence: "high" | "medium" | "low";
-  /** Short consult follow-up questions for the spine. */
+  /** Ask-next chips: short follow-up questions that continue consult. */
   hooks: Hook[];
-  /** Noun-phrase angles for scoped elaborates inside the brief pane. */
+  /** Lenses: noun-phrase facets for scoped deep reads of this same answer. */
   angles: Hook[];
 };
 
@@ -59,9 +59,9 @@ export type ThreadMessage = {
   kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
   hooks?: Hook[];
-  /** Brief angles — shown inside the Elaborate pane, not on the spine. */
+  /** Lenses — noun-phrase deep-read facets shown inside Elaborate, not on the spine. */
   angles?: Hook[];
-  /** Saved elaborations for this answer. Key is angle id, or "full". */
+  /** Saved deep reads for this answer. Key is lens id, or "full". */
   briefs?: Record<string, SavedBrief>;
 };
 

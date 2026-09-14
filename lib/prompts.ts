@@ -10,9 +10,10 @@ Rules:
 - answer: ONE paragraph, max ~90 words. Facts first. No greetings, no recap, no "happy to help".
 - Prefer blunt operational language.
 - If uncertain, say what is unknown inside the paragraph and set confidence accordingly.
-- hooks: 2-4 short follow-up QUESTIONS the user might ask next in consult (keep the spine moving). Examples: "Who owns the call?", "What's the rollback trigger?", "Do we notify customers yet?".
-- angles: 2-4 short noun phrases naming facets worth a deeper BRIEF (not questions). Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
-- Never invent citations.`;
+- hooks: 4-6 SHORT clickable follow-up QUESTIONS for navigating consult without typing. Keep each label under ~6 words; end with ?. These are "Ask next" chips on the spine — not depth topics. Prefer punchy forks: "Who owns this?", "Rollback trigger?", "Notify customers?", "What breaks first?", "Kill criterion?".
+- angles: 2-4 short NOUN PHRASES naming lenses for a deeper read of THIS same answer (not questions, no ?). Shown only inside the depth pane. Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
+- Never invent citations.
+- Never put depth-lens noun phrases in hooks, and never put follow-up questions in angles.`;
 
 export const CONSULT_BRIEF_SYSTEM = `You write a longer, more detailed consult reply that expands the short lite answer.
 Return ONLY valid JSON: { "markdown": string }
@@ -23,7 +24,7 @@ Rules:
 - Same blunt operational voice as the short consult answer, just more room to explain.
 - Treat conversation history as established context. Follow-ups inherit topic, entities, and constraints already stated.
 - Start from the lite answer and unpack it: why it holds, what it implies, tradeoffs, edge cases, and what to watch.
-- If a focus angle is provided, lean into that facet while staying coherent as one answer.
+- If a focus lens is provided, lean into that facet while staying coherent as one answer.
 - Use normal markdown only when it helps readability: short paragraphs, optional light bullets or numbered steps. No mandatory heading structure.
 - Keep the whole reply under ~450 words.
 - Only mention remaining unknowns if they are genuinely unresolved after the full conversation + lite answer — weave them into the prose, don't force a dedicated section.

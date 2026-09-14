@@ -2,8 +2,8 @@
 
 Local prototype for cofounder demos. The core mix is:
 
-- **Consult** — short answers on a clean spine  
-- **Elaborate** — disposable deep read on one answer  
+- **Consult** — short answers on a clean spine, steered by **Ask next** chips  
+- **Depth** — disposable deep read on one answer, switched by **Lenses**  
 - **Grounding** — a living journal that grows as you talk (agreements, clashes, corrections)
 
 Gemini is a disposable stand-in for an on-prem model.
@@ -22,14 +22,15 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 ### Consult
 
-- Short answers on the main spine; chips send **consult follow-ups**
+- Short answers on the main spine
+- **Ask next** chips under an answer send follow-up questions (navigate without typing)
 - Three suggested topics are **randomized on each page load** (any walk of life)
-- **Elaborate** opens in a column to the **left of consult**; deeper **angles** live as chips inside that pane
-- **Grounding** stays on the **right** and can stay open while you elaborate
+- **Read deeper** opens **Depth** to the **left of consult**; **Lenses** switch facets of that same answer (tabs, not chat chips)
+- **Grounding** stays on the **right** and can stay open while you read deeper
 
-### Elaborate → Grounding
+### Depth → Grounding
 
-Elaborate replies are deeper reads, not source of truth. From an open elaborate:
+Depth replies are deeper reads, not source of truth. From an open depth pane:
 
 - **Half** — append a short excerpt from the start of the elaborate  
 - **Full** — append the entire elaborate reply (nothing truncated)  
@@ -59,7 +60,7 @@ Persistence: `two-lane-session-v9` (consult + grounding journal + edit-armed fla
 
 1. Refresh — note three new starter topics.
 2. Click a starter (and maybe a chip follow-up).
-3. **Elaborate** — skim angles; **Half → Grounding**.
+3. **Read deeper** — switch **Lenses**; **Half → Grounding**.
 4. Arm **Edit with chat**, then disagree or lock something — watch the journal grow.
 5. Disarm and ask a normal consult question — Grounding stays visible.
 6. **New chat** for a clean slate.

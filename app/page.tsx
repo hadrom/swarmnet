@@ -3,10 +3,11 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
+  BookOpen,
   ChevronRight,
   FileText,
   Loader2,
-  Maximize2,
+  MessageCircle,
   PanelRight,
   PenLine,
   Plus,
@@ -450,7 +451,7 @@ export default function Home() {
       const data = await res.json();
       if (!res.ok) throw new Error(data.error || "Brief failed");
       saveBriefOnMessage(msg.id, key, {
-        title: hook?.label ?? "Elaborate",
+        title: hook?.label ?? "Full read",
         markdown: data.markdown,
         hookId: hook?.id,
       });
@@ -506,47 +507,37 @@ export default function Home() {
     const savedEntries = Object.entries(msg.briefs ?? {});
     const isBriefSource =
       showBriefPane && openBrief?.messageId === msg.id;
+    const askNext = msg.hooks ?? [];
 
     return (
-      <div className="flex max-w-[95%] flex-col gap-1.5">
+      <div className="flex max-w-[95%] flex-col gap-2">
         <div className="flex flex-wrap items-center gap-1.5">
           {msg.confidence ? (
             <Badge>confidence · {msg.confidence}</Badge>
           ) : null}
-
-          {msg.hooks?.map((hook) => (
-            <button
-              key={hook.id}
-              type="button"
-              disabled={busy}
-              onClick={() => onHookClick(msg, hook)}
-              className="rounded-full border border-zinc-200 bg-white px-2.5 py-1 text-[11px] font-medium text-zinc-600 transition hover:border-zinc-300 hover:bg-zinc-50 disabled:opacity-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300"
-            >
-              {hook.label}
-            </button>
-          ))}
 
           <button
             type="button"
             disabled={busy}
             onClick={() => void onElaborate(msg)}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+              "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-semibold transition disabled:opacity-50",
               msg.briefs?.[FULL_BRIEF_KEY]
                 ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
                 : "border-zinc-900 bg-zinc-900 text-white hover:bg-zinc-800 dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900",
               isBriefSource && "ring-2 ring-zinc-400",
             )}
+            title="Open a deeper read of this answer"
           >
             {msg.briefs?.[FULL_BRIEF_KEY] ? (
               <>
-                <FileText className="h-3 w-3" />
-                View brief
+                <BookOpen className="h-3 w-3" />
+                Open depth
               </>
             ) : (
               <>
-                <Maximize2 className="h-3 w-3" />
-                Elaborate
+                <BookOpen className="h-3 w-3" />
+                Read deeper
               </>
             )}
           </button>
@@ -556,7 +547,7 @@ export default function Home() {
             disabled={busy}
             onClick={() => openGrounding(msg)}
             className={cn(
-              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+              "inline-flex items-center gap-1 rounded-md border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
               showGroundingPane
                 ? "border-sky-700 bg-sky-700 text-white"
                 : "border-sky-800/70 bg-sky-50 text-sky-950 hover:bg-sky-100 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100",
@@ -567,6 +558,29 @@ export default function Home() {
             {canvas ? "Open grounding" : "Grounding"}
           </button>
         </div>
+
+        {askNext.length > 0 ? (
+          <div className="space-y-1">
+            <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+              <MessageCircle className="h-3 w-3" />
+              Ask next
+            </p>
+            <div className="flex flex-wrap gap-1.5">
+              {askNext.map((hook) => (
+                <button
+                  key={hook.id}
+                  type="button"
+                  disabled={busy}
+                  onClick={() => onHookClick(msg, hook)}
+                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70"
+                  title="Send this as the next consult question"
+                >
+                  {hook.label}
+                </button>
+              ))}
+            </div>
+          </div>
+        ) : null}
 
         {savedEntries.length > 1 ? (
           <div className="flex flex-wrap gap-1">
@@ -620,7 +634,7 @@ export default function Home() {
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {editingGrounding
                 ? "Composer targets Grounding — turn off Edit with chat to consult again."
-                : "Consult for short answers. Elaborate to read deeper. Grounding is the ground-truth doc."}
+                : "Consult for short answers. Ask next to steer. Read deeper for lenses. Grounding is ground truth."}
             </p>
           </div>
           <div className="flex shrink-0 items-center gap-2">
@@ -668,10 +682,10 @@ export default function Home() {
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">
-                  Elaborate · {activeBrief.brief.title}
+                  Depth · {activeBrief.brief.title}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  Deep read left of consult — Half / Full append into Grounding
+                  Deep read left of consult — lenses swap facets; Half / Full append into Grounding
                 </p>
               </div>
               <Button
@@ -695,27 +709,26 @@ export default function Home() {
                     if (angles.length === 0 && !fullSaved) return null;
                     return (
                       <div className="space-y-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                          Angles
+                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Lenses
                         </p>
-                        <div className="flex flex-wrap gap-1.5">
+                        <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5 dark:border-zinc-700 dark:bg-zinc-900/80">
                           <button
                             type="button"
                             disabled={busy}
                             onClick={() => void onElaborate(src)}
                             className={cn(
-                              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                               fullOpen || (!openBrief?.key && fullSaved)
-                                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                                : fullSaved
-                                  ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                                : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
                             )}
+                            title="Unscoped deep read of this answer"
                           >
                             {fullSaved ? (
                               <FileText className="h-3 w-3" />
                             ) : null}
-                            Overview
+                            Full read
                           </button>
                           {angles.map((angle) => {
                             const saved = src.briefs?.[angle.id];
@@ -729,13 +742,12 @@ export default function Home() {
                                 disabled={busy}
                                 onClick={() => void onElaborate(src, angle)}
                                 className={cn(
-                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                  "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
                                   isOpen
-                                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                                    : saved
-                                      ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                                    : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
                                 )}
+                                title="Deep read through this lens"
                               >
                                 {saved ? <FileText className="h-3 w-3" /> : null}
                                 {angle.label}
@@ -796,7 +808,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Elaborate is a deep read. Grounding is a living journal
+                    Ask next steers consult. Read deeper opens lenses. Grounding is a living journal
                     that grows as you talk — agreements, clashes, and corrections.
                   </p>
                 </div>
