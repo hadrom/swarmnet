@@ -24,7 +24,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 - Short answers on the main spine; chips send **consult follow-ups**
 - Three suggested topics are **randomized on each page load** (any walk of life)
-- **Elaborate** docks under the consult spine on the **left** (same column as chat); deeper **angles** live as chips inside that pane
+- **Elaborate** opens in a column to the **left of consult**; deeper **angles** live as chips inside that pane
 - **Grounding** stays on the **right** and can stay open while you elaborate
 
 ### Elaborate → Grounding

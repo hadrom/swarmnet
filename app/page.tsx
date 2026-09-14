@@ -215,16 +215,14 @@ export default function Home() {
   const showBriefPane = activeBrief !== null;
   const showGroundingPane = sideKind === "grounding" && canvas != null;
   const editingGrounding = showGroundingPane && groundingEditing;
-  const showSidePane = showGroundingPane;
+  const columnCount =
+    (showBriefPane ? 1 : 0) + 1 + (showGroundingPane ? 1 : 0);
   const groundingStatus = useMemo(
     () => (canvas ? canvasJournalStatus(canvas) : null),
     [canvas],
   );
-  const chatMaxWidth = showGroundingPane
-    ? showBriefPane
-      ? "max-w-md"
-      : "max-w-lg"
-    : "max-w-2xl";
+  const chatMaxWidth =
+    columnCount >= 3 ? "max-w-md" : columnCount === 2 ? "max-w-lg" : "max-w-2xl";
 
   function clearSession() {
     setMessages([]);
@@ -658,117 +656,37 @@ export default function Home() {
       <main
         className={cn(
           "mx-auto grid w-full max-w-7xl min-h-0 flex-1 gap-0 overflow-hidden",
-          showSidePane
-            ? "grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1 lg:grid-cols-2"
-            : "grid-cols-1",
+          columnCount === 3
+            ? "grid-rows-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1 lg:grid-cols-3"
+            : columnCount === 2
+              ? "grid-rows-[minmax(0,1fr)_minmax(0,1fr)] lg:grid-rows-1 lg:grid-cols-2"
+              : "grid-cols-1",
         )}
       >
-        <section
-          className={cn(
-            "flex min-h-0 flex-col overflow-hidden",
-            showSidePane &&
-              "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
-          )}
-        >
-          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
-            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-            {messages.length === 0 ? (
-              <div
-                className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
+        {showBriefPane && activeBrief ? (
+          <section className="flex min-h-0 flex-col overflow-hidden border-b border-zinc-200 bg-white lg:border-b-0 lg:border-r dark:border-zinc-800 dark:bg-zinc-950">
+            <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-semibold">
+                  Elaborate · {activeBrief.brief.title}
+                </h2>
+                <p className="text-xs text-zinc-500">
+                  Deep read left of consult — Half / Full append into Grounding
+                </p>
+              </div>
+              <Button
+                type="button"
+                variant="ghost"
+                size="sm"
+                onClick={closeElaborate}
+                title="Close elaborate"
               >
-                <div>
-                  <h2 className="text-base font-semibold">
-                    Ask something operational
-                  </h2>
-                  <p className="mt-1 text-sm text-zinc-500">
-                    Short answers stay on this spine — chips ask follow-ups.
-                    Elaborate is a deep read. Grounding is a living journal
-                    that grows as you talk — agreements, clashes, and corrections.
-                  </p>
-                </div>
-                <div className="flex flex-col gap-2">
-                  {starters.map((s) => (
-                    <button
-                      key={s}
-                      type="button"
-                      onClick={() => void onSubmit(s)}
-                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left text-sm text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700"
-                    >
-                      {s}
-                    </button>
-                  ))}
-                </div>
-              </div>
-            ) : (
-              <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
-                {messages.map((msg) => {
-                  const isBriefSource =
-                    showBriefPane && openBrief?.messageId === msg.id;
-                  const groundingTurn = isGroundingMsg(msg);
-
-                  return (
-                    <div
-                      key={msg.id}
-                      className={cn(
-                        "flex flex-col gap-2",
-                        msg.role === "user" ? "items-end" : "items-start",
-                      )}
-                    >
-                      <div
-                        className={cn(
-                          "max-w-[95%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
-                          msg.role === "user"
-                            ? groundingTurn
-                              ? "bg-sky-800 text-white dark:bg-sky-200 dark:text-sky-950"
-                              : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
-                            : groundingTurn
-                              ? "bg-sky-50 text-sky-950 shadow-sm ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-50 dark:ring-sky-900"
-                              : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
-                          isBriefSource &&
-                            "ring-2 ring-zinc-900 dark:ring-zinc-100",
-                        )}
-                      >
-                        {msg.content}
-                      </div>
-                      {renderMessageActions(msg)}
-                    </div>
-                  );
-                })}
-
-                {busy ? (
-                  <div className="flex items-center gap-2 text-xs text-zinc-500">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Working…
-                  </div>
-                ) : null}
-                <div ref={bottomRef} />
-              </div>
-            )}
-          </ScrollArea>
-          {showBriefPane && activeBrief ? (
-            <div className="flex min-h-0 flex-[1.15] flex-col border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
-              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
-                <div className="min-w-0">
-                  <h2 className="truncate text-sm font-semibold">
-                    Elaborate · {activeBrief.brief.title}
-                  </h2>
-                  <p className="text-xs text-zinc-500">
-                    Deep read under consult — Half / Full append into Grounding
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="ghost"
-                  size="sm"
-                  onClick={closeElaborate}
-                  title="Close elaborate"
-                >
-                  <X className="h-4 w-4" />
-                  <span className="ml-1 hidden sm:inline">Close</span>
-                </Button>
-              </div>
-              <ScrollArea className="min-h-0 flex-1 px-4 py-3">
-<div className="space-y-4">
+                <X className="h-4 w-4" />
+                <span className="ml-1 hidden sm:inline">Close</span>
+              </Button>
+            </div>
+            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
+              <div className="space-y-4">
                   {(() => {
                     const src = activeBrief.message;
                     const angles = src.angles ?? [];
@@ -857,11 +775,90 @@ export default function Home() {
                   </div>
                   <SimpleMarkdown text={activeBrief.brief.markdown} />
                 </div>
-              </ScrollArea>
-            </div>
-          ) : null}
+            </ScrollArea>
+          </section>
+        ) : null}
+        <section
+          className={cn(
+            "flex min-h-0 flex-col overflow-hidden",
+            showGroundingPane &&
+              "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
+          )}
+        >
+            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
+            {messages.length === 0 ? (
+              <div
+                className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
+              >
+                <div>
+                  <h2 className="text-base font-semibold">
+                    Ask something operational
+                  </h2>
+                  <p className="mt-1 text-sm text-zinc-500">
+                    Short answers stay on this spine — chips ask follow-ups.
+                    Elaborate is a deep read. Grounding is a living journal
+                    that grows as you talk — agreements, clashes, and corrections.
+                  </p>
+                </div>
+                <div className="flex flex-col gap-2">
+                  {starters.map((s) => (
+                    <button
+                      key={s}
+                      type="button"
+                      onClick={() => void onSubmit(s)}
+                      className="rounded-xl border border-zinc-200 bg-white px-3 py-2.5 text-left text-sm text-zinc-700 transition hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-800 dark:bg-zinc-900 dark:text-zinc-200 dark:hover:border-zinc-700"
+                    >
+                      {s}
+                    </button>
+                  ))}
+                </div>
+              </div>
+            ) : (
+              <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
+                {messages.map((msg) => {
+                  const isBriefSource =
+                    showBriefPane && openBrief?.messageId === msg.id;
+                  const groundingTurn = isGroundingMsg(msg);
 
-          </div>
+                  return (
+                    <div
+                      key={msg.id}
+                      className={cn(
+                        "flex flex-col gap-2",
+                        msg.role === "user" ? "items-end" : "items-start",
+                      )}
+                    >
+                      <div
+                        className={cn(
+                          "max-w-[95%] rounded-2xl px-3.5 py-2.5 text-sm leading-relaxed",
+                          msg.role === "user"
+                            ? groundingTurn
+                              ? "bg-sky-800 text-white dark:bg-sky-200 dark:text-sky-950"
+                              : "bg-zinc-900 text-white dark:bg-zinc-100 dark:text-zinc-900"
+                            : groundingTurn
+                              ? "bg-sky-50 text-sky-950 shadow-sm ring-1 ring-sky-200 dark:bg-sky-950/40 dark:text-sky-50 dark:ring-sky-900"
+                              : "bg-white text-zinc-800 shadow-sm ring-1 ring-zinc-200 dark:bg-zinc-900 dark:text-zinc-100 dark:ring-zinc-800",
+                          isBriefSource &&
+                            "ring-2 ring-zinc-900 dark:ring-zinc-100",
+                        )}
+                      >
+                        {msg.content}
+                      </div>
+                      {renderMessageActions(msg)}
+                    </div>
+                  );
+                })}
+
+                {busy ? (
+                  <div className="flex items-center gap-2 text-xs text-zinc-500">
+                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
+                    Working…
+                  </div>
+                ) : null}
+                <div ref={bottomRef} />
+              </div>
+            )}
+          </ScrollArea>
 
           <div
             className={cn(
