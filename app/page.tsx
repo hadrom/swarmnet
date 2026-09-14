@@ -34,8 +34,9 @@ import {
 import { cn } from "@/lib/utils";
 
 /** Consult spine + Grounding journal. */
-const STORAGE_KEY = "two-lane-session-v8";
+const STORAGE_KEY = "two-lane-session-v9";
 const LEGACY_KEYS = [
+  "two-lane-session-v8",
   "two-lane-session-v7",
   "two-lane-session-v6",
   "two-lane-session-v5",
@@ -47,7 +48,7 @@ const LEGACY_KEYS = [
   "two-lane-working-notes-v1",
 ];
 
-type SideKind = "brief" | "grounding";
+type SideKind = "grounding";
 
 type PersistedSession = {
   messages: ThreadMessage[];
@@ -92,11 +93,9 @@ function loadSession(): PersistedSession | null {
       return null;
     }
     const side: SideKind | null =
-      parsed.sideKind === "brief"
-        ? "brief"
-        : parsed.sideKind === "grounding" || parsed.sideKind === "canvas"
-          ? "grounding"
-          : null;
+      parsed.sideKind === "grounding" || parsed.sideKind === "canvas"
+        ? "grounding"
+        : null;
     return {
       messages: parsed.messages,
       sideKind: side,
@@ -178,10 +177,7 @@ export default function Home() {
     if (saved) {
       setMessages(saved.messages);
       setCanvas(saved.canvas ?? null);
-      if (saved.sideKind === "brief") {
-        setSideKind("brief");
-        setGroundingEditing(false);
-      } else if (saved.sideKind === "grounding" && saved.canvas) {
+      if (saved.sideKind === "grounding" && saved.canvas) {
         setSideKind("grounding");
         setGroundingEditing(Boolean(saved.groundingEditing));
       } else {
@@ -200,12 +196,7 @@ export default function Home() {
       messages,
       canvas,
       groundingEditing: groundingOpen ? groundingEditing : false,
-      sideKind:
-        sideKind === "brief"
-          ? "brief"
-          : sideKind === "grounding"
-            ? "grounding"
-            : null,
+      sideKind: sideKind === "grounding" ? "grounding" : null,
     });
   }, [messages, sideKind, canvas, groundingEditing, hydrated]);
 
@@ -221,15 +212,19 @@ export default function Home() {
     return { message: msg, brief, key: openBrief.key };
   }, [openBrief, messages]);
 
-  const showBriefPane = sideKind === "brief" && activeBrief !== null;
+  const showBriefPane = activeBrief !== null;
   const showGroundingPane = sideKind === "grounding" && canvas != null;
   const editingGrounding = showGroundingPane && groundingEditing;
-  const showSidePane = showBriefPane || showGroundingPane;
+  const showSidePane = showGroundingPane;
   const groundingStatus = useMemo(
     () => (canvas ? canvasJournalStatus(canvas) : null),
     [canvas],
   );
-  const chatMaxWidth = showSidePane ? "max-w-lg" : "max-w-2xl";
+  const chatMaxWidth = showGroundingPane
+    ? showBriefPane
+      ? "max-w-md"
+      : "max-w-lg"
+    : "max-w-2xl";
 
   function clearSession() {
     setMessages([]);
@@ -247,8 +242,11 @@ export default function Home() {
     }
   }
 
-  function hideSidePane() {
+  function closeElaborate() {
     setOpenBrief(null);
+  }
+
+  function hideGrounding() {
     if (sideKind === "grounding") setGroundingEditing(false);
     setSideKind(null);
   }
@@ -268,7 +266,6 @@ export default function Home() {
           : { title: "Working note" },
       );
     setCanvas(next);
-    setOpenBrief(null);
     setSideKind("grounding");
     setGroundingEditing(false);
     setError(null);
@@ -277,7 +274,6 @@ export default function Home() {
   function armGroundingEditing(armed: boolean) {
     if (!canvas) return;
     setSideKind("grounding");
-    setOpenBrief(null);
     setGroundingEditing(armed);
     if (armed) {
       window.setTimeout(() => composerRef.current?.focus(), 50);
@@ -305,8 +301,6 @@ export default function Home() {
 
   function openSavedBrief(messageId: string, key: string) {
     setOpenBrief({ messageId, key });
-    setSideKind("brief");
-    setGroundingEditing(false);
   }
 
   function saveBriefOnMessage(
@@ -322,8 +316,6 @@ export default function Home() {
       ),
     );
     setOpenBrief({ messageId, key });
-    setSideKind("brief");
-    setGroundingEditing(false);
   }
 
   async function sendConsult(question: string, prior: ThreadMessage[]) {
@@ -515,7 +507,7 @@ export default function Home() {
 
     const savedEntries = Object.entries(msg.briefs ?? {});
     const isBriefSource =
-      sideKind === "brief" && openBrief?.messageId === msg.id;
+      showBriefPane && openBrief?.messageId === msg.id;
 
     return (
       <div className="flex max-w-[95%] flex-col gap-1.5">
@@ -678,7 +670,8 @@ export default function Home() {
               "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
           )}
         >
-          <ScrollArea className="min-h-0 flex-1 px-4 py-4">
+          <div className="flex min-h-0 flex-1 flex-col overflow-hidden">
+            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
             {messages.length === 0 ? (
               <div
                 className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
@@ -710,7 +703,7 @@ export default function Home() {
               <div className={cn("mx-auto flex flex-col gap-4", chatMaxWidth)}>
                 {messages.map((msg) => {
                   const isBriefSource =
-                    sideKind === "brief" && openBrief?.messageId === msg.id;
+                    showBriefPane && openBrief?.messageId === msg.id;
                   const groundingTurn = isGroundingMsg(msg);
 
                   return (
@@ -752,6 +745,123 @@ export default function Home() {
               </div>
             )}
           </ScrollArea>
+          {showBriefPane && activeBrief ? (
+            <div className="flex min-h-0 flex-[1.15] flex-col border-t border-zinc-200 bg-white dark:border-zinc-800 dark:bg-zinc-950">
+              <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+                <div className="min-w-0">
+                  <h2 className="truncate text-sm font-semibold">
+                    Elaborate · {activeBrief.brief.title}
+                  </h2>
+                  <p className="text-xs text-zinc-500">
+                    Deep read under consult — Half / Full append into Grounding
+                  </p>
+                </div>
+                <Button
+                  type="button"
+                  variant="ghost"
+                  size="sm"
+                  onClick={closeElaborate}
+                  title="Close elaborate"
+                >
+                  <X className="h-4 w-4" />
+                  <span className="ml-1 hidden sm:inline">Close</span>
+                </Button>
+              </div>
+              <ScrollArea className="min-h-0 flex-1 px-4 py-3">
+<div className="space-y-4">
+                  {(() => {
+                    const src = activeBrief.message;
+                    const angles = src.angles ?? [];
+                    const fullSaved = Boolean(src.briefs?.[FULL_BRIEF_KEY]);
+                    const fullOpen = openBrief?.key === FULL_BRIEF_KEY;
+                    if (angles.length === 0 && !fullSaved) return null;
+                    return (
+                      <div className="space-y-1.5">
+                        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
+                          Angles
+                        </p>
+                        <div className="flex flex-wrap gap-1.5">
+                          <button
+                            type="button"
+                            disabled={busy}
+                            onClick={() => void onElaborate(src)}
+                            className={cn(
+                              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                              fullOpen || (!openBrief?.key && fullSaved)
+                                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                                : fullSaved
+                                  ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                            )}
+                          >
+                            {fullSaved ? (
+                              <FileText className="h-3 w-3" />
+                            ) : null}
+                            Overview
+                          </button>
+                          {angles.map((angle) => {
+                            const saved = src.briefs?.[angle.id];
+                            const isOpen =
+                              openBrief?.messageId === src.id &&
+                              openBrief.key === angle.id;
+                            return (
+                              <button
+                                key={angle.id}
+                                type="button"
+                                disabled={busy}
+                                onClick={() => void onElaborate(src, angle)}
+                                className={cn(
+                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
+                                  isOpen
+                                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
+                                    : saved
+                                      ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
+                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
+                                )}
+                              >
+                                {saved ? <FileText className="h-3 w-3" /> : null}
+                                {angle.label}
+                              </button>
+                            );
+                          })}
+                        </div>
+                      </div>
+                    );
+                  })()}
+                  <div className="flex flex-wrap gap-1.5 rounded-xl border border-sky-200 bg-sky-50/80 p-2 dark:border-sky-900 dark:bg-sky-950/30">
+                    <p className="w-full text-[11px] font-medium text-sky-950 dark:text-sky-100">
+                      Add to Grounding
+                    </p>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => promoteBrief("half")}
+                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                      title="Append a short excerpt from this elaborate"
+                    >
+                      Half
+                    </Button>
+                    <Button
+                      type="button"
+                      size="sm"
+                      variant="outline"
+                      disabled={busy}
+                      onClick={() => promoteBrief("full")}
+                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
+                      title="Append the entire elaborate reply into Grounding"
+                    >
+                      Full
+                    </Button>
+                  </div>
+                  <SimpleMarkdown text={activeBrief.brief.markdown} />
+                </div>
+              </ScrollArea>
+            </div>
+          ) : null}
+
+          </div>
 
           <div
             className={cn(
@@ -858,7 +968,7 @@ export default function Home() {
           </div>
         </section>
 
-        {showSidePane ? (
+        {showGroundingPane && canvas ? (
           <section className="flex min-h-0 flex-col overflow-hidden bg-white dark:bg-zinc-950">
             <div
               className={cn(
@@ -870,59 +980,37 @@ export default function Home() {
             >
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">
-                  {showBriefPane && activeBrief
-                    ? `Brief · ${activeBrief.brief.title}`
-                    : editingGrounding
-                      ? "Grounding · chat editing"
-                      : "Grounding"}
+                  {editingGrounding ? "Grounding · chat editing" : "Grounding"}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  {showBriefPane
-                    ? "Deep read — append keepers into the Grounding journal"
-                    : editingGrounding
-                      ? "Composer is locked onto this doc until you disarm"
-                      : groundingStatus
-                        ? `${groundingStatus.entries} ${groundingStatus.entries === 1 ? "entry" : "entries"} · journal grows as you talk`
-                        : "Open journal — edit here; arm chat to extend the trail"}
+                  {editingGrounding
+                    ? "Composer is locked onto this doc until you disarm"
+                    : groundingStatus
+                      ? `${groundingStatus.entries} ${groundingStatus.entries === 1 ? "entry" : "entries"} · journal grows as you talk`
+                      : "Open journal — edit here; arm chat to extend the trail"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
-                {showGroundingPane ? (
-                  <Button
-                    type="button"
-                    size="sm"
-                    variant={editingGrounding ? "outline" : "primary"}
-                    className={cn(
-                      editingGrounding
-                        ? "border-sky-400 bg-white text-sky-950 hover:bg-sky-50 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-100"
-                        : "bg-sky-700 text-white hover:bg-sky-800",
-                    )}
-                    onClick={() => armGroundingEditing(!editingGrounding)}
-                  >
-                    <PenLine className="h-3.5 w-3.5" />
-                    {editingGrounding ? "Stop editing" : "Edit with chat"}
-                  </Button>
-                ) : null}
-                {showBriefPane && canvas ? (
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    onClick={() => {
-                      setOpenBrief(null);
-                      setSideKind("grounding");
-                      setGroundingEditing(false);
-                    }}
-                  >
-                    Back to grounding
-                  </Button>
-                ) : null}
+                <Button
+                  type="button"
+                  size="sm"
+                  variant={editingGrounding ? "outline" : "primary"}
+                  className={cn(
+                    editingGrounding
+                      ? "border-sky-400 bg-white text-sky-950 hover:bg-sky-50 dark:border-sky-700 dark:bg-sky-950 dark:text-sky-100"
+                      : "bg-sky-700 text-white hover:bg-sky-800",
+                  )}
+                  onClick={() => armGroundingEditing(!editingGrounding)}
+                >
+                  <PenLine className="h-3.5 w-3.5" />
+                  {editingGrounding ? "Stop editing" : "Edit with chat"}
+                </Button>
                 <Button
                   type="button"
                   variant="ghost"
                   size="sm"
-                  onClick={hideSidePane}
-                  title={showBriefPane ? "Close brief" : "Hide grounding"}
+                  onClick={hideGrounding}
+                  title="Hide grounding"
                 >
                   <X className="h-4 w-4" />
                   <span className="ml-1 hidden sm:inline">Close</span>
@@ -930,104 +1018,12 @@ export default function Home() {
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-              {showGroundingPane && canvas ? (
-                <CanvasEditor
-                  key={canvasEpoch}
-                  doc={canvas}
-                  disabled={busy}
-                  onChange={setCanvas}
-                />
-              ) : showBriefPane && activeBrief ? (
-                <div className="space-y-4">
-                  {(() => {
-                    const src = activeBrief.message;
-                    const angles = src.angles ?? [];
-                    const fullSaved = Boolean(src.briefs?.[FULL_BRIEF_KEY]);
-                    const fullOpen = openBrief?.key === FULL_BRIEF_KEY;
-                    if (angles.length === 0 && !fullSaved) return null;
-                    return (
-                      <div className="space-y-1.5">
-                        <p className="text-[11px] font-semibold uppercase tracking-wide text-zinc-500">
-                          Angles
-                        </p>
-                        <div className="flex flex-wrap gap-1.5">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void onElaborate(src)}
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                              fullOpen || (!openBrief?.key && fullSaved)
-                                ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                                : fullSaved
-                                  ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                  : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
-                            )}
-                          >
-                            {fullSaved ? (
-                              <FileText className="h-3 w-3" />
-                            ) : null}
-                            Overview
-                          </button>
-                          {angles.map((angle) => {
-                            const saved = src.briefs?.[angle.id];
-                            const isOpen =
-                              openBrief?.messageId === src.id &&
-                              openBrief.key === angle.id;
-                            return (
-                              <button
-                                key={angle.id}
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void onElaborate(src, angle)}
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-full border px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                  isOpen
-                                    ? "border-zinc-900 bg-zinc-900 text-white dark:border-zinc-100 dark:bg-zinc-100 dark:text-zinc-900"
-                                    : saved
-                                      ? "border-zinc-300 bg-zinc-100 text-zinc-800 dark:border-zinc-600 dark:bg-zinc-800 dark:text-zinc-100"
-                                      : "border-zinc-200 bg-white text-zinc-600 hover:border-zinc-300 hover:bg-zinc-50 dark:border-zinc-700 dark:bg-zinc-900 dark:text-zinc-300",
-                                )}
-                              >
-                                {saved ? <FileText className="h-3 w-3" /> : null}
-                                {angle.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
-                  <div className="flex flex-wrap gap-1.5 rounded-xl border border-sky-200 bg-sky-50/80 p-2 dark:border-sky-900 dark:bg-sky-950/30">
-                    <p className="w-full text-[11px] font-medium text-sky-950 dark:text-sky-100">
-                      Add to Grounding
-                    </p>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => promoteBrief("half")}
-                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append a short excerpt from this elaborate"
-                    >
-                      Half
-                    </Button>
-                    <Button
-                      type="button"
-                      size="sm"
-                      variant="outline"
-                      disabled={busy}
-                      onClick={() => promoteBrief("full")}
-                      className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append the entire elaborate reply into Grounding"
-                    >
-                      Full
-                    </Button>
-                  </div>
-                  <SimpleMarkdown text={activeBrief.brief.markdown} />
-                </div>
-              ) : null}
+              <CanvasEditor
+                key={canvasEpoch}
+                doc={canvas}
+                disabled={busy}
+                onChange={setCanvas}
+              />
             </ScrollArea>
           </section>
         ) : null}

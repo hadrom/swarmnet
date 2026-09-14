@@ -24,15 +24,15 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 - Short answers on the main spine; chips send **consult follow-ups**
 - Three suggested topics are **randomized on each page load** (any walk of life)
-- **Elaborate** opens a longer freeform expansion of the short answer; deeper **angles** live as chips inside that pane
-- **Grounding** opens the journal beside consult
+- **Elaborate** docks under the consult spine on the **left** (same column as chat); deeper **angles** live as chips inside that pane
+- **Grounding** stays on the **right** and can stay open while you elaborate
 
 ### Elaborate → Grounding
 
 Elaborate replies are deeper reads, not source of truth. From an open elaborate:
 
 - **Half** — append a short excerpt from the start of the elaborate  
-- **Full** — append the entire elaborate reply (nothing truncated) 
+- **Full** — append the entire elaborate reply (nothing truncated)  
 
 ### Grounding (journal lane)
 
@@ -44,7 +44,7 @@ Elaborate replies are deeper reads, not source of truth. From an open elaborate:
 6. Status chrome shows entry count
 7. Hide anytime — the journal persists with the session until **New chat**
 
-Persistence: `two-lane-session-v8` (consult + grounding journal + edit-armed flag).
+Persistence: `two-lane-session-v9` (consult + grounding journal + edit-armed flag).
 
 ## Models
 
