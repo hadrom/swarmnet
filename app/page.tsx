@@ -25,6 +25,7 @@ import {
   newChatId,
   saveChatHistory,
   snapshotFromState,
+  titleFromMessages,
   upsertChat,
   type ChatSnapshot,
   type SideKind,
@@ -67,6 +68,16 @@ function uid() {
 
 function briefKeyFor(hook?: Hook) {
   return hook?.id ?? FULL_BRIEF_KEY;
+}
+
+function shouldReplaceGroundingTitle(title: string) {
+  const t = title.replace(/\s+/g, " ").trim();
+  if (!t) return true;
+  if (/^(grounding|working note|untitled)$/i.test(t)) return true;
+  if (t.length > 28) return true;
+  if (/\?$/.test(t)) return true;
+  if (/\b(?:is|are|was|were)\b/i.test(t)) return true;
+  return false;
 }
 
 function clearLegacyStorage() {
@@ -382,16 +393,19 @@ export default function Home() {
 
   function openGrounding(msg?: ThreadMessage) {
     const seedText = msg?.content?.trim() ?? "";
-    const next =
-      canvas ??
-      seedWorkingCanvas(
-        seedText
-          ? {
-              title: shortTitle(seedText, "Grounding"),
-              seedAnswer: seedText,
-            }
-          : { title: "Grounding" },
-      );
+    const chatTitle = titleFromMessages(messages);
+    const titleSeed =
+      chatTitle !== "New chat" ? chatTitle : seedText;
+    const desiredTitle = shortTitle(titleSeed, "Grounding");
+    const next = canvas
+      ? shouldReplaceGroundingTitle(canvas.title)
+        ? { ...canvas, title: desiredTitle, updatedAt: Date.now() }
+        : canvas
+      : seedWorkingCanvas(
+          seedText
+            ? { title: desiredTitle, seedAnswer: seedText }
+            : { title: desiredTitle },
+        );
     setCanvas(next);
     setSideKind("grounding");
     setGroundingEditing(false);
@@ -410,10 +424,13 @@ export default function Home() {
   function promoteBrief(mode: PromoteBriefMode) {
     if (!activeBrief) return;
     const seedText = activeBrief.message.content.trim();
+    const chatTitle = titleFromMessages(messages);
+    const titleSeed =
+      chatTitle !== "New chat" ? chatTitle : seedText;
     const base =
       canvas ??
       seedWorkingCanvas({
-        title: shortTitle(seedText, "Grounding"),
+        title: shortTitle(titleSeed, "Grounding"),
         seedAnswer: seedText,
       });
     const next = promoteBriefIntoCanvas(base, activeBrief.brief, mode);

@@ -5,12 +5,12 @@ export function shortTitle(raw: string, fallback = "New chat"): string {
 
   // Ask-about-this: What is “entanglement”?
   const quoted = t.match(
-    /^(?:what|who|why|how|when|where)\s+(?:is|are|was|were)\s+[“"'‘](.+?)[”"'’]\??$/i,
+    /^(?:what|who|why|how|when|where)\s+(?:is|are|was|were)\s+[“"\'‘](.+?)[”"\'’]\??$/i,
   );
   if (quoted?.[1]) {
     t = quoted[1].trim();
   } else {
-    t = t.replace(/^[“"'‘]+|[”"'’]+$/g, "");
+    t = t.replace(/^[“"\'‘]+|[”"\'’]+$/g, "");
     t = t.replace(
       /^(?:hey|hi|hello|please|can you|could you|would you|tell me|explain|describe|define|summarize|outline)\s+/i,
       "",
@@ -20,6 +20,14 @@ export function shortTitle(raw: string, fallback = "New chat"): string {
       "",
     );
     t = t.replace(/^(?:a|an|the)\s+/i, "");
+  }
+
+  // Declarative answer openings: "Coral reef is a complex…" → "Coral reef"
+  const beforeIs = t.match(
+    /^((?:[\w'’.-]+\s+){0,3}[\w'’.-]+)\s+(?:is|are|was|were|means|refers)\b/i,
+  );
+  if (beforeIs?.[1] && beforeIs[1].length >= 2) {
+    t = beforeIs[1].trim();
   }
 
   t = t.replace(/[?!.:;]+$/g, "").trim();
