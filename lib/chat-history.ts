@@ -1,4 +1,5 @@
 import type { CanvasDoc, ThreadMessage } from "@/lib/types";
+import { shortTitle } from "@/lib/titles";
 
 export const CHATS_STORAGE_KEY = "two-lane-chats-v1";
 export const LEGACY_SESSION_KEY = "two-lane-session-v9";
@@ -28,9 +29,7 @@ export function newChatId() {
 export function titleFromMessages(messages: ThreadMessage[]): string {
   const firstUser = messages.find((m) => m.role === "user");
   const raw = firstUser?.content?.replace(/\s+/g, " ").trim() ?? "";
-  if (!raw) return "New chat";
-  if (raw.length <= 48) return raw;
-  return `${raw.slice(0, 45).trimEnd()}…`;
+  return shortTitle(raw, "New chat");
 }
 
 export function emptyChat(id = newChatId()): ChatSnapshot {
@@ -100,13 +99,18 @@ export function loadChatHistory(): ChatHistoryStore | null {
       )
       .map((c) => ({
         ...c,
-        title: c.title || titleFromMessages(c.messages),
+        title: titleFromMessages(c.messages),
         sideKind:
           c.sideKind === "grounding" ||
           (c as { sideKind?: string | null }).sideKind === "canvas"
             ? ("grounding" as const)
             : null,
-        canvas: c.canvas ?? null,
+        canvas: c.canvas
+          ? {
+              ...c.canvas,
+              title: shortTitle(c.canvas.title || "", "Grounding"),
+            }
+          : null,
         groundingEditing: Boolean(c.groundingEditing),
         createdAt: c.createdAt || c.updatedAt || Date.now(),
         updatedAt: c.updatedAt || Date.now(),

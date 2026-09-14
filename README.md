@@ -48,7 +48,7 @@ Depth replies are deeper reads, not source of truth. From an open depth pane:
 
 ### Chat history
 
-- Conversations auto-save to `localStorage` (`two-lane-chats-v1`) with title from the first question
+- Conversations auto-save to `localStorage`; sidebar and grounding use a short tab title derived from the first question (e.g. "Coral reef")
 - Left sidebar lists past chats — click to recall (consult + grounding included)
 - **New chat** archives the current thread and opens a blank one; delete from the sidebar when done
 - Survives tab close (unlike the old single-session `sessionStorage` slot)

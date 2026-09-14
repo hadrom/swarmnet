@@ -1,3 +1,4 @@
+import { shortTitle } from "@/lib/titles";
 export type Hook = {
   id: string;
   label: string;
@@ -172,10 +173,10 @@ export function seedWorkingCanvas(opts?: {
   seedAnswer?: string;
 }): CanvasDoc {
   const seed = (opts?.seedAnswer ?? "").replace(/\s+/g, " ").trim();
-  const title =
-    opts?.title?.trim() ||
-    seed.split(/[.!?]/)[0]?.trim().slice(0, 72) ||
-    "Grounding journal";
+  const title = shortTitle(
+    opts?.title?.trim() || seed.split(/[.!?]/)[0]?.trim() || "",
+    "Grounding",
+  );
   const opener = seed
     ? `<p><em>Journal opened from consult.</em></p><hr/><p>${escapeHtml(seed.slice(0, 600))}</p>`
     : `<p><em>Journal opened.</em> Entries accumulate here as you talk — agreements, disagreements, and corrections in the same trail.</p>`;

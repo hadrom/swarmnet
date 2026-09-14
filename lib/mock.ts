@@ -1,3 +1,4 @@
+import { shortTitle } from "@/lib/titles";
 import type {
   BriefResponse,
   CanvasDoc,
@@ -140,8 +141,8 @@ export function mockCanvasEdit(
   if (empty || /draft|write|start|create|journal|grounding|canvas/i.test(message)) {
     const title =
       !doc.title ||
-      /untitled|working note|grounding journal/i.test(doc.title)
-        ? topic.slice(0, 72) || "Grounding journal"
+      /untitled|working note|grounding journal|^grounding$/i.test(doc.title)
+        ? shortTitle(topic, "Grounding")
         : doc.title;
     const html = `<p><em>Journal opened.</em></p><hr/><p>${topic || "Conversation started."}</p>`;
     return {
@@ -153,10 +154,10 @@ export function mockCanvasEdit(
     };
   }
   if (/title|rename|call it/i.test(message)) {
-    const title =
-      topic
-        .replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, "")
-        .slice(0, 80) || "Grounding journal";
+    const title = shortTitle(
+      topic.replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, ""),
+      "Grounding",
+    );
     return {
       reply: `Renamed the journal to “${title}”.`,
       ops: [{ op: "setTitle", title }],

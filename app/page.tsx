@@ -43,6 +43,7 @@ import {
   promoteBriefIntoCanvas,
   seedWorkingCanvas,
 } from "@/lib/types";
+import { shortTitle } from "@/lib/titles";
 import { cn } from "@/lib/utils";
 
 const LEGACY_KEYS = [
@@ -386,12 +387,10 @@ export default function Home() {
       seedWorkingCanvas(
         seedText
           ? {
-              title:
-                seedText.split(/[.!?]/)[0]?.trim().slice(0, 72) ||
-                "Working note",
+              title: shortTitle(seedText, "Grounding"),
               seedAnswer: seedText,
             }
-          : { title: "Working note" },
+          : { title: "Grounding" },
       );
     setCanvas(next);
     setSideKind("grounding");
@@ -414,8 +413,7 @@ export default function Home() {
     const base =
       canvas ??
       seedWorkingCanvas({
-        title:
-          seedText.split(/[.!?]/)[0]?.trim().slice(0, 72) || "Working note",
+        title: shortTitle(seedText, "Grounding"),
         seedAnswer: seedText,
       });
     const next = promoteBriefIntoCanvas(base, activeBrief.brief, mode);

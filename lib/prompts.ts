@@ -167,5 +167,6 @@ Rules:
 - Capture what the ongoing discussion amounts to so far; the trail should make sense if reread alone.
 - Preserve earlier entries. Grow the journal; do not erase history unless the user asks to rewrite.
 - If they ask a normal consult question that should NOT change the journal, return ops: [] and answer in reply.
-- If the journal is empty and they ask to start, open with a short first entry (no section skeleton).`;
+- If the journal is empty and they ask to start, open with a short first entry (no section skeleton).
+- Titles: when setting a title, use a short tab label (2–5 words, ~28 chars). Prefer a noun phrase like "Coral reef" or "Sky blue", not a full question or sentence.`;
 
