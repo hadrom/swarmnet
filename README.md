@@ -44,9 +44,14 @@ Depth replies are deeper reads, not source of truth. From an open depth pane:
 4. While armed, sky chrome shows; turns **append** to the journal (agreements, disagreements, and “you’re wrong because…” live in the trail itself — not special subtitles)
 5. **Back to consult** / **Stop editing** disarms — Grounding can stay open while you ask normal questions
 6. Status chrome shows entry count
-7. Hide anytime — the journal persists with the session until **New chat**
+7. Hide anytime — the journal persists with the chat until you start a new one
 
-Persistence: `two-lane-session-v9` (consult + grounding journal + edit-armed flag).
+### Chat history
+
+- Conversations auto-save to `localStorage` (`two-lane-chats-v1`) with title from the first question
+- Left sidebar lists past chats — click to recall (consult + grounding included)
+- **New chat** archives the current thread and opens a blank one; delete from the sidebar when done
+- Survives tab close (unlike the old single-session `sessionStorage` slot)
 
 ## Models
 
@@ -64,7 +69,8 @@ Persistence: `two-lane-session-v9` (consult + grounding journal + edit-armed fla
 3. **Read deeper** — switch **Variations**; **Half → Grounding**.
 4. Arm **Edit with chat**, then disagree or lock something — watch the journal grow.
 5. Disarm and ask a normal consult question — Grounding stays visible.
-6. **New chat** for a clean slate.
+6. **New chat** — current thread stays in the sidebar; open another topic.
+7. Switch chats from the sidebar to prove recall (grounding comes back too).
 
 ## Swap to on-prem later
 

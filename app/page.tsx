@@ -9,7 +9,6 @@ import {
   MessageCircle,
   PanelRight,
   PenLine,
-  Plus,
   Sparkles,
   X,
 } from "lucide-react";
@@ -17,7 +16,19 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CanvasEditor } from "@/components/canvas-editor";
+import { ChatSidebar, ChatSidebarToggle } from "@/components/chat-sidebar";
 import { PointableAnswer } from "@/components/pointable-answer";
+import {
+  emptyChat,
+  loadChatHistory,
+  migrateLegacySession,
+  newChatId,
+  saveChatHistory,
+  snapshotFromState,
+  upsertChat,
+  type ChatSnapshot,
+  type SideKind,
+} from "@/lib/chat-history";
 import { pickConsultStarters } from "@/lib/prompts";
 import type {
   CanvasDoc,
@@ -34,8 +45,6 @@ import {
 } from "@/lib/types";
 import { cn } from "@/lib/utils";
 
-/** Consult spine + Grounding journal. */
-const STORAGE_KEY = "two-lane-session-v9";
 const LEGACY_KEYS = [
   "two-lane-session-v8",
   "two-lane-session-v7",
@@ -49,19 +58,10 @@ const LEGACY_KEYS = [
   "two-lane-working-notes-v1",
 ];
 
-type SideKind = "grounding";
-
-type PersistedSession = {
-  messages: ThreadMessage[];
-  sideKind: SideKind | null;
-  canvas: CanvasDoc | null;
-  groundingEditing?: boolean;
-};
-
 type OpenBriefRef = { messageId: string; key: string };
 
 function uid() {
-  return `${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  return newChatId();
 }
 
 function briefKeyFor(hook?: Hook) {
@@ -79,48 +79,34 @@ function clearLegacyStorage() {
   }
 }
 
-function loadSession(): PersistedSession | null {
-  if (typeof window === "undefined") return null;
-  try {
-    clearLegacyStorage();
-    const raw = sessionStorage.getItem(STORAGE_KEY);
-    if (!raw) return null;
-    const parsed = JSON.parse(raw) as PersistedSession & {
-      canvasEditing?: boolean;
-      sideKind?: string | null;
-    };
-    if (!Array.isArray(parsed.messages) || parsed.messages.length === 0) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      return null;
-    }
-    const side: SideKind | null =
-      parsed.sideKind === "grounding" || parsed.sideKind === "canvas"
-        ? "grounding"
-        : null;
-    return {
-      messages: parsed.messages,
-      sideKind: side,
-      canvas: parsed.canvas ?? null,
-      groundingEditing: Boolean(
-        parsed.groundingEditing ?? parsed.canvasEditing,
-      ),
-    };
-  } catch {
-    return null;
+function applyChatToUi(
+  chat: ChatSnapshot,
+  setters: {
+    setMessages: (m: ThreadMessage[]) => void;
+    setCanvas: (c: CanvasDoc | null) => void;
+    setSideKind: (s: SideKind | null) => void;
+    setGroundingEditing: (v: boolean) => void;
+    setOpenBrief: (v: OpenBriefRef | null) => void;
+    setCanvasEpoch: (n: number | ((p: number) => number)) => void;
+    setError: (e: string | null) => void;
+    setModelHint: (h: string | null) => void;
+    setInput: (s: string) => void;
+  },
+) {
+  setters.setMessages(chat.messages);
+  setters.setCanvas(chat.canvas);
+  if (chat.sideKind === "grounding" && chat.canvas) {
+    setters.setSideKind("grounding");
+    setters.setGroundingEditing(Boolean(chat.groundingEditing));
+  } else {
+    setters.setSideKind(null);
+    setters.setGroundingEditing(false);
   }
-}
-
-function saveSession(payload: PersistedSession) {
-  if (typeof window === "undefined") return;
-  try {
-    if (payload.messages.length === 0) {
-      sessionStorage.removeItem(STORAGE_KEY);
-      return;
-    }
-    sessionStorage.setItem(STORAGE_KEY, JSON.stringify(payload));
-  } catch {
-    // ignore
-  }
+  setters.setOpenBrief(null);
+  setters.setCanvasEpoch((n) => n + 1);
+  setters.setError(null);
+  setters.setModelHint(null);
+  setters.setInput("");
 }
 
 function SimpleMarkdown({ text }: { text: string }) {
@@ -169,37 +155,94 @@ export default function Home() {
   const [groundingEditing, setGroundingEditing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
   const [starters, setStarters] = useState<string[]>([]);
+  const [activeChatId, setActiveChatId] = useState("");
+  const [chats, setChats] = useState<ChatSnapshot[]>([]);
+  const [sidebarOpen, setSidebarOpen] = useState(true);
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
+  const chatsRef = useRef<ChatSnapshot[]>([]);
+  const activeMetaRef = useRef<{ id: string; createdAt: number; title: string }>({
+    id: "",
+    createdAt: Date.now(),
+    title: "New chat",
+  });
 
   useEffect(() => {
-    const saved = loadSession();
-    if (saved) {
-      setMessages(saved.messages);
-      setCanvas(saved.canvas ?? null);
-      if (saved.sideKind === "grounding" && saved.canvas) {
-        setSideKind("grounding");
-        setGroundingEditing(Boolean(saved.groundingEditing));
-      } else {
-        setSideKind(null);
-        setGroundingEditing(false);
-      }
+    chatsRef.current = chats;
+  }, [chats]);
+
+  useEffect(() => {
+    clearLegacyStorage();
+    const existing = loadChatHistory();
+    const migrated = migrateLegacySession();
+    let nextChats = existing?.chats ?? [];
+    let activeId = existing?.activeId ?? "";
+
+    if (migrated) {
+      nextChats = upsertChat(nextChats, migrated);
+      activeId = migrated.id;
     }
+
+    const active =
+      (activeId && nextChats.find((c) => c.id === activeId)) || nextChats[0];
+
+    if (active) {
+      setActiveChatId(active.id);
+      activeMetaRef.current = {
+        id: active.id,
+        createdAt: active.createdAt,
+        title: active.title,
+      };
+      setMessages(active.messages);
+      setCanvas(active.canvas);
+      if (active.sideKind === "grounding" && active.canvas) {
+        setSideKind("grounding");
+        setGroundingEditing(Boolean(active.groundingEditing));
+      }
+      setChats(nextChats);
+      saveChatHistory({ activeId: active.id, chats: nextChats });
+    } else {
+      const draft = emptyChat();
+      setActiveChatId(draft.id);
+      activeMetaRef.current = {
+        id: draft.id,
+        createdAt: draft.createdAt,
+        title: draft.title,
+      };
+      setChats([]);
+      saveChatHistory({ activeId: draft.id, chats: [] });
+    }
+
     setStarters(pickConsultStarters(3));
     setHydrated(true);
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
   }, []);
 
   useEffect(() => {
-    if (!hydrated) return;
+    if (!hydrated || !activeChatId) return;
     const groundingOpen = sideKind === "grounding" && canvas != null;
-    saveSession({
+    const snap = snapshotFromState({
+      id: activeChatId,
+      createdAt: activeMetaRef.current.createdAt,
+      prevTitle: activeMetaRef.current.title,
       messages,
       canvas,
       groundingEditing: groundingOpen ? groundingEditing : false,
       sideKind: sideKind === "grounding" ? "grounding" : null,
     });
-  }, [messages, sideKind, canvas, groundingEditing, hydrated]);
+    activeMetaRef.current = {
+      id: snap.id,
+      createdAt: snap.createdAt,
+      title: snap.title,
+    };
+    const next = upsertChat(chatsRef.current, snap);
+    chatsRef.current = next;
+    setChats(next);
+    saveChatHistory({ activeId: activeChatId, chats: next });
+  }, [messages, sideKind, canvas, groundingEditing, hydrated, activeChatId]);
 
   useEffect(() => {
     bottomRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -225,20 +268,106 @@ export default function Home() {
   const chatMaxWidth =
     columnCount >= 3 ? "max-w-md" : columnCount === 2 ? "max-w-lg" : "max-w-2xl";
 
-  function clearSession() {
-    setMessages([]);
-    setSideKind(null);
-    setOpenBrief(null);
-    setCanvas(null);
-    setCanvasEpoch(0);
-    setGroundingEditing(false);
-    setError(null);
-    setModelHint(null);
-    setInput("");
-    if (typeof window !== "undefined") {
-      sessionStorage.removeItem(STORAGE_KEY);
-      clearLegacyStorage();
+  const uiSetters = {
+    setMessages,
+    setCanvas,
+    setSideKind,
+    setGroundingEditing,
+    setOpenBrief,
+    setCanvasEpoch,
+    setError,
+    setModelHint,
+    setInput,
+  };
+
+  function flushCurrentChat(): ChatSnapshot[] {
+    if (!activeChatId) return chatsRef.current;
+    const groundingOpen = sideKind === "grounding" && canvas != null;
+    const snap = snapshotFromState({
+      id: activeChatId,
+      createdAt: activeMetaRef.current.createdAt,
+      prevTitle: activeMetaRef.current.title,
+      messages,
+      canvas,
+      groundingEditing: groundingOpen ? groundingEditing : false,
+      sideKind: sideKind === "grounding" ? "grounding" : null,
+    });
+    const next = upsertChat(chatsRef.current, snap);
+    chatsRef.current = next;
+    setChats(next);
+    return next;
+  }
+
+  function startNewChat() {
+    if (busy) return;
+    const next = flushCurrentChat();
+    const draft = emptyChat();
+    setActiveChatId(draft.id);
+    activeMetaRef.current = {
+      id: draft.id,
+      createdAt: draft.createdAt,
+      title: draft.title,
+    };
+    applyChatToUi(draft, uiSetters);
+    setBusy(false);
+    saveChatHistory({ activeId: draft.id, chats: next });
+    setStarters(pickConsultStarters(3));
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setSidebarOpen(false);
     }
+  }
+
+  function selectChat(id: string) {
+    if (busy || id === activeChatId) return;
+    const next = flushCurrentChat();
+    const chat = next.find((c) => c.id === id);
+    if (!chat) return;
+    setActiveChatId(chat.id);
+    activeMetaRef.current = {
+      id: chat.id,
+      createdAt: chat.createdAt,
+      title: chat.title,
+    };
+    applyChatToUi(chat, uiSetters);
+    setBusy(false);
+    saveChatHistory({ activeId: chat.id, chats: next });
+    if (typeof window !== "undefined" && window.innerWidth < 1024) {
+      setSidebarOpen(false);
+    }
+  }
+
+  function deleteChat(id: string) {
+    if (busy) return;
+    let next = chatsRef.current.filter((c) => c.id !== id);
+    if (id === activeChatId) {
+      const fallback = next[0];
+      if (fallback) {
+        setActiveChatId(fallback.id);
+        activeMetaRef.current = {
+          id: fallback.id,
+          createdAt: fallback.createdAt,
+          title: fallback.title,
+        };
+        applyChatToUi(fallback, uiSetters);
+        saveChatHistory({ activeId: fallback.id, chats: next });
+      } else {
+        const draft = emptyChat();
+        next = [];
+        setActiveChatId(draft.id);
+        activeMetaRef.current = {
+          id: draft.id,
+          createdAt: draft.createdAt,
+          title: draft.title,
+        };
+        applyChatToUi(draft, uiSetters);
+        setStarters(pickConsultStarters(3));
+        saveChatHistory({ activeId: draft.id, chats: next });
+      }
+    } else {
+      saveChatHistory({ activeId: activeChatId, chats: next });
+    }
+    chatsRef.current = next;
+    setChats(next);
   }
 
   function closeElaborate() {
@@ -588,12 +717,23 @@ export default function Home() {
   return (
     <div
       className={cn(
-        "flex h-dvh flex-col overflow-hidden text-zinc-900 dark:text-zinc-50",
+        "flex h-dvh overflow-hidden text-zinc-900 dark:text-zinc-50",
         editingGrounding
           ? "bg-sky-50/50 dark:bg-zinc-950"
           : "bg-zinc-50 dark:bg-zinc-950",
       )}
     >
+      <ChatSidebar
+        open={sidebarOpen}
+        onToggle={() => setSidebarOpen((o) => !o)}
+        chats={chats}
+        activeId={activeChatId}
+        onNewChat={startNewChat}
+        onSelect={selectChat}
+        onDelete={deleteChat}
+      />
+
+      <div className="flex min-w-0 flex-1 flex-col overflow-hidden">
       <header
         className={cn(
           "shrink-0 border-b backdrop-blur",
@@ -603,9 +743,13 @@ export default function Home() {
         )}
       >
         <div className="mx-auto flex max-w-7xl items-center justify-between gap-4 px-4 py-3">
-          <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            {!sidebarOpen ? (
+              <ChatSidebarToggle onClick={() => setSidebarOpen(true)} />
+            ) : null}
+            <div className="min-w-0">
             <div className="flex items-center gap-2">
-              <Sparkles className="h-4 w-4 text-zinc-500" />
+              <Sparkles className="h-4 w-4 shrink-0 text-zinc-500" />
               <h1 className="truncate text-sm font-semibold tracking-tight">
                 Two-lane LLM demo
               </h1>
@@ -620,6 +764,7 @@ export default function Home() {
                 ? "Composer targets Grounding — turn off Edit with chat to consult again."
                 : "Consult for short answers. Ask next to steer. Read deeper for variations. Grounding is ground truth."}
             </p>
+            </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
             {modelHint ? (
@@ -641,10 +786,10 @@ export default function Home() {
               type="button"
               variant="outline"
               size="sm"
-              onClick={clearSession}
-              title="Clear consult and grounding"
+              disabled={busy}
+              onClick={startNewChat}
+              title="Start a new chat (current one stays in history)"
             >
-              <Plus className="h-3.5 w-3.5" />
               New chat
             </Button>
           </div>
@@ -1034,6 +1179,7 @@ export default function Home() {
           </section>
         ) : null}
       </main>
+      </div>
     </div>
   );
 }
