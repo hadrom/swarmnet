@@ -378,36 +378,86 @@ export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
 const NOTES_HEADING_RE = /<h3[^>]*>\s*NOTES\s*<\/h3>/i;
 const NOTE_ITEM_RE = /<p[^>]*>\s*<strong>\s*(\d+)\.\s*<\/strong>/gi;
 
+export type AskNoteRef = {
+  id: string;
+  num: number;
+  phrase: string;
+  question: string;
+};
+
+/** Pull the selected phrase out of an Ask-about-this question. */
+export function phraseFromAskQuestion(question: string): string {
+  const q = question.replace(/\s+/g, " ").trim();
+  const quoted = q.match(/^what is\s+[“"'](.+?)[”"']\??$/i);
+  if (quoted?.[1]) return quoted[1].trim();
+  return q.replace(/^[“"']+|[”"']+$/g, "").trim();
+}
+
 /** How many Ask-about-this notes already sit under the NOTES heading. */
 export function countAskNotes(doc: CanvasDoc): number {
-  const html = doc.bodyHtml || "";
-  const start = html.search(NOTES_HEADING_RE);
-  if (start < 0) return 0;
-  const after = html.slice(start);
-  let max = 0;
-  for (const m of after.matchAll(NOTE_ITEM_RE)) {
-    const n = Number(m[1]);
-    if (Number.isFinite(n) && n > max) max = n;
+  return listAskNotes(doc).reduce((max, n) => Math.max(max, n.num), 0);
+}
+
+/** Read Ask-about-this NOTES anchors from a grounding doc. */
+export function listAskNotes(doc: CanvasDoc | null | undefined): AskNoteRef[] {
+  const html = doc?.bodyHtml || "";
+  if (!html) return [];
+
+  if (typeof DOMParser !== "undefined") {
+    const parsed = new DOMParser().parseFromString(html, "text/html");
+    const out: AskNoteRef[] = [];
+    parsed.querySelectorAll<HTMLElement>("[data-ask-phrase]").forEach((el) => {
+      const phrase = (el.getAttribute("data-ask-phrase") || "").trim();
+      const id = (el.id || "").trim();
+      if (!phrase || !id) return;
+      const strong = el.querySelector("strong")?.textContent || "";
+      const num = Number(strong.replace(/\D/g, "")) || out.length + 1;
+      const em = el.querySelector("em")?.textContent || "";
+      out.push({
+        id,
+        num,
+        phrase,
+        question: em || `What is “${phrase}”?`,
+      });
+    });
+    if (out.length) return out.sort((a, b) => a.num - b.num);
   }
-  return max;
+
+  // Regex fallback (SSR / odd attribute order).
+  const out: AskNoteRef[] = [];
+  const re =
+    /<p\b[^>]*\bid=["'](ask-note-\d+)["'][^>]*\bdata-ask-phrase=["']([^"']+)["'][^>]*>\s*<strong>\s*(\d+)\./gi;
+  for (const m of html.matchAll(re)) {
+    out.push({
+      id: m[1],
+      phrase: m[2],
+      num: Number(m[3]) || out.length + 1,
+      question: `What is “${m[2]}”?`,
+    });
+  }
+  return out.sort((a, b) => a.num - b.num);
 }
 
 /**
  * Append an Ask-about-this Q&A under a trailing NOTES section.
  * Creates the section on first use; numbers entries 1., 2., 3., …
+ * Each note gets an id + data-ask-phrase so the consult answer can deep-link here.
  */
 export function appendAskNoteToCanvas(
   doc: CanvasDoc,
   question: string,
   answer: string,
+  phrase?: string,
 ): CanvasDoc {
   const q = question.replace(/\s+/g, " ").trim();
   const a = answer.replace(/\s+/g, " ").trim();
   if (!q || !a) return doc;
 
+  const topic = (phrase ?? phraseFromAskQuestion(q)).replace(/\s+/g, " ").trim();
   const nextNum = countAskNotes(doc) + 1;
+  const noteId = `ask-note-${nextNum}`;
   const noteHtml =
-    `<p><strong>${nextNum}.</strong> <em>${escapeHtml(q)}</em><br/>${escapeHtml(a)}</p>`;
+    `<p id="${noteId}" data-ask-phrase="${escapeHtml(topic)}"><strong>${nextNum}.</strong> <em>${escapeHtml(q)}</em><br/>${escapeHtml(a)}</p>`;
 
   let bodyHtml = (doc.bodyHtml || "").trim();
   if (!NOTES_HEADING_RE.test(bodyHtml)) {

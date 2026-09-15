@@ -1,15 +1,32 @@
 "use client";
 
-import { useCallback, useEffect, useRef, useState, type ReactNode } from "react";
+import {
+  useCallback,
+  useEffect,
+  useLayoutEffect,
+  useMemo,
+  useRef,
+  useState,
+  type ReactNode,
+} from "react";
 import { cn } from "@/lib/utils";
 
+export type DescribedPhrase = {
+  phrase: string;
+  noteId: string;
+};
+
 type Props = {
-  /** Plain text answer (consult). Prefer `children` when rendering rich content. */
+  /** Plain text answer (consult). Prefer `children` for rich content. */
   text?: string;
   children?: ReactNode;
   disabled?: boolean;
   className?: string;
   onAsk: (question: string) => void;
+  /** Phrases already answered under Grounding NOTES — underlined + clickable. */
+  described?: DescribedPhrase[];
+  /** Open Grounding and jump to this note id. */
+  onOpenNote?: (noteId: string) => void;
 };
 
 type AskChip = {
@@ -27,7 +44,6 @@ function questionForPhrase(raw: string): string | null {
   const phrase = raw.replace(/\s+/g, " ").trim();
   if (phrase.length < 2 || phrase.length > 120) return null;
   if (phrase.split(/\s+/).length > 12) return null;
-  // Strip trailing punctuation from selection edges for a cleaner ask.
   const cleaned = phrase.replace(/^[“"'(]+|[”"'.,:;!?)]+$/g, "").trim();
   if (cleaned.length < 2) return null;
   return `What is “${cleaned}”?`;
@@ -51,7 +67,6 @@ function expandWordRange(textNode: Text, offset: number): Range | null {
   let start = Math.min(Math.max(offset, 0), text.length);
   let end = start;
 
-  // If caret landed on punctuation/space, nudge onto a nearby word.
   if (start < text.length && !isWordChar(text[start]!)) {
     if (start > 0 && isWordChar(text[start - 1]!)) start -= 1;
     else {
@@ -94,18 +109,156 @@ function caretRangeFromPoint(x: number, y: number): Range | null {
   return null;
 }
 
+function escapeRegExp(s: string) {
+  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+}
+
+type MarkHit = { start: number; end: number; noteId: string };
+
+function findMarkHits(text: string, described: DescribedPhrase[]): MarkHit[] {
+  if (!text || described.length === 0) return [];
+  const ranked = [...described]
+    .filter((d) => d.phrase.trim().length >= 2)
+    .sort((a, b) => b.phrase.length - a.phrase.length);
+  const hits: MarkHit[] = [];
+  const taken: Array<[number, number]> = [];
+
+  for (const d of ranked) {
+    const phrase = d.phrase.trim();
+    const re = new RegExp(
+      `(?:^|[^\\p{L}\\p{N}_'])(${escapeRegExp(phrase)})(?=$|[^\\p{L}\\p{N}_'])`,
+      "giu",
+    );
+    let m: RegExpExecArray | null;
+    while ((m = re.exec(text)) !== null) {
+      const full = m[0];
+      const captured = m[1] ?? full;
+      const start = m.index + full.indexOf(captured);
+      const end = start + captured.length;
+      if (taken.some(([a, b]) => start < b && end > a)) continue;
+      taken.push([start, end]);
+      hits.push({ start, end, noteId: d.noteId });
+    }
+  }
+  return hits.sort((a, b) => a.start - b.start);
+}
+
+const MARK_CLASS =
+  "cursor-pointer bg-transparent p-0 font-inherit text-inherit underline decoration-sky-600 decoration-2 underline-offset-[3px] hover:decoration-sky-800 dark:decoration-sky-400 dark:hover:decoration-sky-200";
+
+function renderMarkedText(
+  text: string,
+  described: DescribedPhrase[],
+  onOpenNote?: (noteId: string) => void,
+) {
+  const hits = findMarkHits(text, described);
+  if (hits.length === 0) return text;
+
+  const parts: ReactNode[] = [];
+  let cursor = 0;
+  hits.forEach((hit, i) => {
+    if (hit.start > cursor) parts.push(text.slice(cursor, hit.start));
+    parts.push(
+      <button
+        key={`${hit.noteId}-${hit.start}-${i}`}
+        type="button"
+        data-ask-described=""
+        data-note-id={hit.noteId}
+        title="Open description in Grounding NOTES"
+        className={MARK_CLASS}
+        onMouseDown={(e) => e.stopPropagation()}
+        onClick={(e) => {
+          e.preventDefault();
+          e.stopPropagation();
+          onOpenNote?.(hit.noteId);
+        }}
+      >
+        {text.slice(hit.start, hit.end)}
+      </button>,
+    );
+    cursor = hit.end;
+  });
+  if (cursor < text.length) parts.push(text.slice(cursor));
+  return parts;
+}
+
+function unwrapDescribedMarks(root: HTMLElement) {
+  root.querySelectorAll("span[data-ask-described]").forEach((span) => {
+    const parent = span.parentNode;
+    if (!parent) return;
+    while (span.firstChild) parent.insertBefore(span.firstChild, span);
+    parent.removeChild(span);
+  });
+}
+
+function wrapDescribedInDom(root: HTMLElement, described: DescribedPhrase[]) {
+  unwrapDescribedMarks(root);
+  if (described.length === 0) return;
+
+  const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT, {
+    acceptNode(node) {
+      const parent = (node as Text).parentElement;
+      if (!parent) return NodeFilter.FILTER_REJECT;
+      if (parent.closest("[data-ask-chip],[data-ask-described]")) {
+        return NodeFilter.FILTER_REJECT;
+      }
+      if (!node.textContent?.trim()) return NodeFilter.FILTER_REJECT;
+      return NodeFilter.FILTER_ACCEPT;
+    },
+  });
+
+  const nodes: Text[] = [];
+  while (walker.nextNode()) nodes.push(walker.currentNode as Text);
+
+  for (const textNode of nodes) {
+    const value = textNode.textContent ?? "";
+    const hits = findMarkHits(value, described);
+    if (hits.length === 0) continue;
+
+    const frag = document.createDocumentFragment();
+    let cursor = 0;
+    for (const hit of hits) {
+      if (hit.start > cursor) {
+        frag.appendChild(
+          document.createTextNode(value.slice(cursor, hit.start)),
+        );
+      }
+      const mark = document.createElement("span");
+      mark.dataset.askDescribed = "true";
+      mark.dataset.noteId = hit.noteId;
+      mark.title = "Open description in Grounding NOTES";
+      mark.className =
+        "cursor-pointer underline decoration-sky-600 decoration-2 underline-offset-[3px] hover:decoration-sky-800 dark:decoration-sky-400 dark:hover:decoration-sky-200";
+      mark.textContent = value.slice(hit.start, hit.end);
+      frag.appendChild(mark);
+      cursor = hit.end;
+    }
+    if (cursor < value.length) {
+      frag.appendChild(document.createTextNode(value.slice(cursor)));
+    }
+    textNode.parentNode?.replaceChild(frag, textNode);
+  }
+}
+
 export function PointableAnswer({
   text,
   children,
   disabled,
   className,
   onAsk,
+  described = [],
+  onOpenNote,
 }: Props) {
   const rootRef = useRef<HTMLDivElement>(null);
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
   const [chip, setChip] = useState<AskChip | null>(null);
 
   const clearChip = useCallback(() => setChip(null), []);
+
+  const describedKey = useMemo(
+    () => described.map((d) => `${d.noteId}:${d.phrase}`).join("|"),
+    [described],
+  );
 
   const showChipForRange = useCallback(
     (range: Range, phrase: string) => {
@@ -150,9 +303,22 @@ export function PointableAnswer({
     };
   }, [clearChip]);
 
+  // Rich children (Depth markdown): decorate matching phrases after render.
+  useLayoutEffect(() => {
+    const root = rootRef.current;
+    if (!root || text != null) return;
+    wrapDescribedInDom(root, described);
+    return () => {
+      if (rootRef.current) unwrapDescribedMarks(rootRef.current);
+    };
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [describedKey, children, text]);
+
   function onMouseDown(e: React.MouseEvent) {
     if (disabled) return;
-    if ((e.target as HTMLElement).closest("[data-ask-chip]")) return;
+    const el = e.target as HTMLElement;
+    if (el.closest("[data-ask-chip]")) return;
+    if (el.closest("[data-ask-described]")) return;
     pointerDown.current = { x: e.clientX, y: e.clientY };
   }
 
@@ -161,11 +327,19 @@ export function PointableAnswer({
     const root = rootRef.current;
     if (!root) return;
 
+    const el = e.target as HTMLElement;
+    const describedEl = el.closest("[data-ask-described]") as HTMLElement | null;
+    if (describedEl) {
+      clearChip();
+      const noteId = describedEl.getAttribute("data-note-id");
+      if (noteId) onOpenNote?.(noteId);
+      return;
+    }
+
     const sel = window.getSelection();
     const down = pointerDown.current;
     pointerDown.current = null;
 
-    // Drag-select: use the selected span.
     if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
       const range = sel.getRangeAt(0);
       if (!root.contains(range.commonAncestorContainer)) {
@@ -176,7 +350,6 @@ export function PointableAnswer({
       return;
     }
 
-    // Click: expand the word under the cursor, then confirm.
     if (!down) return;
     const moved =
       Math.abs(e.clientX - down.x) > 4 || Math.abs(e.clientY - down.y) > 4;
@@ -202,7 +375,6 @@ export function PointableAnswer({
       clearChip();
       return;
     }
-    // Visually mark the word so confirm feels intentional.
     sel?.removeAllRanges();
     sel?.addRange(wordRange);
     showChipForRange(wordRange, wordRange.toString());
@@ -216,7 +388,9 @@ export function PointableAnswer({
       onMouseUp={onMouseUp}
     >
       {children ?? (
-        <p className="whitespace-pre-wrap">{text ?? ""}</p>
+        <p className="whitespace-pre-wrap">
+          {renderMarkedText(text ?? "", described, onOpenNote)}
+        </p>
       )}
 
       {chip ? (

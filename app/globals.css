@@ -28,3 +28,14 @@ body {
 * {
   box-sizing: border-box;
 }
+
+
+/* Brief highlight when jumping from an underlined Ask-about-this phrase. */
+.ask-note-flash {
+  animation: ask-note-flash 1.4s ease-out;
+  border-radius: 0.35rem;
+}
+@keyframes ask-note-flash {
+  0% { background-color: rgb(186 230 253 / 0.9); }
+  100% { background-color: transparent; }
+}

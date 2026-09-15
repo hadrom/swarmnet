@@ -17,7 +17,10 @@ import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CanvasEditor } from "@/components/canvas-editor";
 import { ChatSidebar, ChatSidebarToggle } from "@/components/chat-sidebar";
-import { PointableAnswer } from "@/components/pointable-answer";
+import {
+  PointableAnswer,
+  type DescribedPhrase,
+} from "@/components/pointable-answer";
 import {
   emptyChat,
   loadChatHistory,
@@ -42,6 +45,8 @@ import {
   FULL_BRIEF_KEY,
   appendAskNoteToCanvas,
   canvasJournalStatus,
+  listAskNotes,
+  phraseFromAskQuestion,
   promoteBriefIntoCanvas,
   seedWorkingCanvas,
 } from "@/lib/types";
@@ -291,6 +296,29 @@ export default function Home() {
 
   const showBriefPane = activeBrief !== null;
   const showGroundingPane = sideKind === "grounding" && canvas != null;
+  const describedPhrases: DescribedPhrase[] = useMemo(
+    () =>
+      listAskNotes(canvas).map((n) => ({
+        phrase: n.phrase,
+        noteId: n.id,
+      })),
+    [canvas],
+  );
+
+  function openAskNote(noteId: string) {
+    setSideKind("grounding");
+    setGroundingEditing(false);
+    setError(null);
+    // Wait for the grounding pane + canvas HTML to mount, then scroll.
+    window.setTimeout(() => {
+      const el = document.getElementById(noteId);
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ask-note-flash");
+      window.setTimeout(() => el.classList.remove("ask-note-flash"), 1600);
+    }, 60);
+  }
+
   const editingGrounding = showGroundingPane && groundingEditing;
   const columnCount =
     (showBriefPane ? 1 : 0) + 1 + (showGroundingPane ? 1 : 0);
@@ -604,6 +632,7 @@ export default function Home() {
         canvasRef.current ?? base,
         q,
         data.answer,
+        phraseFromAskQuestion(q),
       );
       canvasRef.current = next;
       setCanvas(next);
@@ -1085,7 +1114,9 @@ export default function Home() {
                   </div>
                   <PointableAnswer
                     disabled={busy}
+                    described={describedPhrases}
                     onAsk={(q) => void askAboutIntoNotes(q)}
+                    onOpenNote={openAskNote}
                   >
                     <SimpleMarkdown text={activeBrief.brief.markdown} />
                   </PointableAnswer>
@@ -1161,7 +1192,9 @@ export default function Home() {
                           <PointableAnswer
                             text={msg.content}
                             disabled={busy}
+                            described={describedPhrases}
                             onAsk={(q) => void askAboutIntoNotes(q)}
+                            onOpenNote={openAskNote}
                           />
                         ) : (
                           msg.content

@@ -24,7 +24,7 @@ Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
 
 - Short answers on the main spine
 - **Ask next** — exactly **3** follow-up chips, ranked by inferred intent from the question + short answer (navigate without typing)
-- Click a word or drag-select a phrase, confirm **Ask about this** — the answer lands as a numbered item under **NOTES** at the end of Grounding (not a new consult turn)
+- Click a word or drag-select a phrase, confirm **Ask about this** — the answer lands as a numbered item under **NOTES** in Grounding. Described words stay underlined; click one to jump back to its NOTES entry
 - Three suggested topics are **randomized on each page load** (any walk of life)
 - **Read deeper** opens **Depth** to the **left of consult**; **Variations** reweight that same deep read (Main + facet tabs — not chat chips)
 - **Grounding** stays on the **right** and can stay open while you read deeper
