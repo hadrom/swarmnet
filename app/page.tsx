@@ -1376,6 +1376,7 @@ export default function Home() {
                 doc={canvas}
                 disabled={busy}
                 onChange={setCanvas}
+                onAsk={(q) => void askAboutIntoNotes(q)}
               />
             </ScrollArea>
           </section>

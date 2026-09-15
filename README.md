@@ -42,9 +42,10 @@ Depth replies are deeper reads, not source of truth. From an open depth pane:
 2. Doc seeds as an open journal (no fixed sections). It grows like an RPG trail
 3. Edit with the toolbar yourself, or click **Edit with chat** to arm the composer
 4. While armed, sky chrome shows; turns **append** to the journal (agreements, disagreements, and “you’re wrong because…” live in the trail itself — not special subtitles)
-5. **Back to consult** / **Stop editing** disarms — Grounding can stay open while you ask normal questions
-6. Status chrome shows entry count
-7. Hide anytime — the journal persists with the chat until you start a new one
+5. Highlight journal text (above **NOTES**) or click a word → **Ask about this** — same as consult/Depth; answers append as numbered NOTES items (asks inside NOTES are ignored)
+6. **Back to consult** / **Stop editing** disarms — Grounding can stay open while you ask normal questions
+7. Status chrome shows entry count
+8. Hide anytime — the journal persists with the chat until you start a new one
 
 ### Chat history
 
