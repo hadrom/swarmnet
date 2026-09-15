@@ -90,31 +90,22 @@ function expandWordRange(node: Text, offset: number): Range | null {
 
 /** True if the caret/selection sits inside the NOTES block (heading + items). */
 function isInsideNotes(root: HTMLElement, range: Range): boolean {
-  const headings = Array.from(root.querySelectorAll("h1,h2,h3")).filter((h) =>
+  const startNode = range.startContainer;
+  const startEl =
+    startNode.nodeType === Node.ELEMENT_NODE
+      ? (startNode as Element)
+      : startNode.parentElement;
+  if (startEl?.closest("[data-ask-phrase],[id^='ask-note-']")) return true;
+
+  const notesEl = Array.from(root.querySelectorAll("h1,h2,h3")).find((h) =>
     /^NOTES$/i.test((h.textContent || "").trim()),
   );
-  if (headings.length === 0) {
-    // Still block asks that originate on an ask-note paragraph.
-    const startEl =
-      range.startContainer.nodeType === Node.ELEMENT_NODE
-        ? (range.startContainer as HTMLElement)
-        : range.startContainer.parentElement;
-    return Boolean(startEl?.closest("[data-ask-phrase],[id^='ask-note-']"));
-  }
-
-  const notesEl = headings[0]!;
-  const startNode = range.startContainer;
+  if (!notesEl) return false;
   if (notesEl === startNode || notesEl.contains(startNode)) return true;
 
-  try {
-    const probe = document.createRange();
-    probe.selectNodeContents(root);
-    probe.setStartBefore(notesEl);
-    return probe.isPointInRange(range.startContainer, range.startOffset);
-  } catch {
-    const cmp = notesEl.compareDocumentPosition(startNode);
-    return Boolean(cmp & Node.DOCUMENT_POSITION_FOLLOWING);
-  }
+  // Node is in NOTES if it follows the NOTES heading in document order.
+  const cmp = notesEl.compareDocumentPosition(startNode);
+  return Boolean(cmp & Node.DOCUMENT_POSITION_FOLLOWING);
 }
 
 function chipPosition(range: Range, root: HTMLElement) {
@@ -137,6 +128,10 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
   const docRef = useRef(doc);
   docRef.current = doc;
   const pointerDown = useRef<{ x: number; y: number } | null>(null);
+  const disabledRef = useRef(!!disabled);
+  disabledRef.current = !!disabled;
+  const onAskRef = useRef(onAsk);
+  onAskRef.current = onAsk;
   const [chip, setChip] = useState<AskChip | null>(null);
 
   const clearChip = useCallback(() => setChip(null), []);
@@ -156,27 +151,109 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
     lastLocalHtml.current = null;
   }, [doc.bodyHtml, doc.updatedAt]);
 
+  const showChipForRange = useCallback(
+    (range: Range, phrase: string) => {
+      const root = bodyRef.current;
+      const ask = onAskRef.current;
+      const question = questionForPhrase(phrase);
+      if (!root || !question || !ask || disabledRef.current) {
+        clearChip();
+        return;
+      }
+      if (isInsideNotes(root, range)) {
+        clearChip();
+        return;
+      }
+      const pos = chipPosition(range, root);
+      setChip({ phrase, question, ...pos });
+    },
+    [clearChip],
+  );
+
+  // Document-level mouseup so selections still work if the release
+  // lands outside the contenteditable (ScrollArea chrome, etc.).
   useEffect(() => {
     if (!onAsk) return;
+
+    function tryShowFromSelection(clientX?: number, clientY?: number) {
+      const root = bodyRef.current;
+      if (!root || disabledRef.current || !onAskRef.current) return;
+      const sel = window.getSelection();
+
+      if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
+        const range = sel.getRangeAt(0);
+        if (!root.contains(range.commonAncestorContainer)) {
+          clearChip();
+          return;
+        }
+        showChipForRange(range, sel.toString());
+        return;
+      }
+
+      // Click-to-select a word (no drag)
+      const down = pointerDown.current;
+      pointerDown.current = null;
+      if (
+        down &&
+        clientX != null &&
+        clientY != null &&
+        Math.abs(clientX - down.x) <= 4 &&
+        Math.abs(clientY - down.y) <= 4
+      ) {
+        const caret = caretRangeFromPoint(clientX, clientY);
+        if (!caret || !root.contains(caret.startContainer)) {
+          clearChip();
+          return;
+        }
+        if (caret.startContainer.nodeType !== Node.TEXT_NODE) {
+          clearChip();
+          return;
+        }
+        const wordRange = expandWordRange(
+          caret.startContainer as Text,
+          caret.startOffset,
+        );
+        if (!wordRange) {
+          clearChip();
+          return;
+        }
+        sel?.removeAllRanges();
+        sel?.addRange(wordRange);
+        showChipForRange(wordRange, wordRange.toString());
+        return;
+      }
+
+      clearChip();
+    }
+
     function onDocMouseDown(e: MouseEvent) {
       if (!wrapRef.current) return;
       if (e.target instanceof Node && wrapRef.current.contains(e.target)) {
         const el = e.target as HTMLElement;
         if (el.closest("[data-ask-chip]")) return;
+        if (bodyRef.current?.contains(e.target as Node)) {
+          pointerDown.current = { x: e.clientX, y: e.clientY };
+        }
         return;
       }
       clearChip();
     }
-    function onScroll() {
-      clearChip();
+
+    function onDocMouseUp(e: MouseEvent) {
+      if (e.target instanceof Element && e.target.closest("[data-ask-chip]")) {
+        return;
+      }
+      // Defer so the browser finishes updating the selection.
+      window.setTimeout(() => tryShowFromSelection(e.clientX, e.clientY), 0);
     }
+
     document.addEventListener("mousedown", onDocMouseDown);
-    document.addEventListener("scroll", onScroll, true);
+    document.addEventListener("mouseup", onDocMouseUp);
     return () => {
       document.removeEventListener("mousedown", onDocMouseDown);
-      document.removeEventListener("scroll", onScroll, true);
+      document.removeEventListener("mouseup", onDocMouseUp);
     };
-  }, [clearChip, onAsk]);
+  }, [clearChip, onAsk, showChipForRange]);
 
   function emitFromEditor() {
     if (disabled) return;
@@ -202,79 +279,12 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
     };
   }
 
-  const showChipForRange = (range: Range, phrase: string) => {
-    const root = bodyRef.current;
-    const question = questionForPhrase(phrase);
-    if (!root || !question || !onAsk || disabled) {
-      clearChip();
-      return;
-    }
-    if (isInsideNotes(root, range)) {
-      clearChip();
-      return;
-    }
-    const pos = chipPosition(range, root);
-    setChip({ phrase, question, ...pos });
-  };
-
   const handleAsk = () => {
     if (disabled || !chip || !onAsk) return;
     const question = chip.question;
     clearChip();
     window.getSelection()?.removeAllRanges();
     onAsk(question);
-  };
-
-  const onMouseDown = (e: React.MouseEvent) => {
-    if (!onAsk || disabled) return;
-    pointerDown.current = { x: e.clientX, y: e.clientY };
-  };
-
-  const onMouseUp = (e: React.MouseEvent) => {
-    if (!onAsk || disabled || !bodyRef.current) return;
-    const root = bodyRef.current;
-    const sel = window.getSelection();
-    const down = pointerDown.current;
-    pointerDown.current = null;
-
-    if (sel && !sel.isCollapsed && sel.rangeCount > 0) {
-      const range = sel.getRangeAt(0);
-      if (!root.contains(range.commonAncestorContainer)) {
-        clearChip();
-        return;
-      }
-      showChipForRange(range, sel.toString());
-      return;
-    }
-
-    if (!down) return;
-    const moved =
-      Math.abs(e.clientX - down.x) > 4 || Math.abs(e.clientY - down.y) > 4;
-    if (moved) {
-      clearChip();
-      return;
-    }
-
-    const caret = caretRangeFromPoint(e.clientX, e.clientY);
-    if (!caret || !root.contains(caret.startContainer)) {
-      clearChip();
-      return;
-    }
-    if (caret.startContainer.nodeType !== Node.TEXT_NODE) {
-      clearChip();
-      return;
-    }
-    const wordRange = expandWordRange(
-      caret.startContainer as Text,
-      caret.startOffset,
-    );
-    if (!wordRange) {
-      clearChip();
-      return;
-    }
-    sel?.removeAllRanges();
-    sel?.addRange(wordRange);
-    showChipForRange(wordRange, wordRange.toString());
   };
 
   return (
@@ -362,8 +372,6 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
             emitFromEditor();
           }}
           onBlur={emitFromEditor}
-          onMouseDown={onMouseDown}
-          onMouseUp={onMouseUp}
           onKeyDown={() => clearChip()}
           className={cn(
             // Grow with content like a long notepad; the side pane ScrollArea scrolls.
