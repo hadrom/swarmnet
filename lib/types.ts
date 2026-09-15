@@ -374,3 +374,49 @@ export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
   }
   return { ...next, updatedAt: Date.now() };
 }
+
+const NOTES_HEADING_RE = /<h3[^>]*>\s*NOTES\s*<\/h3>/i;
+const NOTE_ITEM_RE = /<p[^>]*>\s*<strong>\s*(\d+)\.\s*<\/strong>/gi;
+
+/** How many Ask-about-this notes already sit under the NOTES heading. */
+export function countAskNotes(doc: CanvasDoc): number {
+  const html = doc.bodyHtml || "";
+  const start = html.search(NOTES_HEADING_RE);
+  if (start < 0) return 0;
+  const after = html.slice(start);
+  let max = 0;
+  for (const m of after.matchAll(NOTE_ITEM_RE)) {
+    const n = Number(m[1]);
+    if (Number.isFinite(n) && n > max) max = n;
+  }
+  return max;
+}
+
+/**
+ * Append an Ask-about-this Q&A under a trailing NOTES section.
+ * Creates the section on first use; numbers entries 1., 2., 3., …
+ */
+export function appendAskNoteToCanvas(
+  doc: CanvasDoc,
+  question: string,
+  answer: string,
+): CanvasDoc {
+  const q = question.replace(/\s+/g, " ").trim();
+  const a = answer.replace(/\s+/g, " ").trim();
+  if (!q || !a) return doc;
+
+  const nextNum = countAskNotes(doc) + 1;
+  const noteHtml =
+    `<p><strong>${nextNum}.</strong> <em>${escapeHtml(q)}</em><br/>${escapeHtml(a)}</p>`;
+
+  let bodyHtml = (doc.bodyHtml || "").trim();
+  if (!NOTES_HEADING_RE.test(bodyHtml)) {
+    const sep = bodyHtml && stripHtml(bodyHtml) ? "<hr/>" : "";
+    bodyHtml = `${bodyHtml}${sep}<h3>NOTES</h3>${noteHtml}`;
+  } else {
+    bodyHtml = `${bodyHtml}${noteHtml}`;
+  }
+
+  return applyCanvasOps(doc, [{ op: "setBodyHtml", html: bodyHtml }]);
+}
+

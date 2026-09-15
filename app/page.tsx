@@ -40,6 +40,7 @@ import type {
 } from "@/lib/types";
 import {
   FULL_BRIEF_KEY,
+  appendAskNoteToCanvas,
   canvasJournalStatus,
   promoteBriefIntoCanvas,
   seedWorkingCanvas,
@@ -168,6 +169,7 @@ export default function Home() {
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
   const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
+  const canvasRef = useRef<CanvasDoc | null>(null);
   const [canvasEpoch, setCanvasEpoch] = useState(0);
   const [groundingEditing, setGroundingEditing] = useState(false);
   const [hydrated, setHydrated] = useState(false);
@@ -194,6 +196,10 @@ export default function Home() {
   useEffect(() => {
     chatsRef.current = chats;
   }, [chats]);
+
+  useEffect(() => {
+    canvasRef.current = canvas;
+  }, [canvas]);
 
   useEffect(() => {
     clearLegacyStorage();
@@ -575,6 +581,40 @@ export default function Home() {
       angles?: Hook[];
       tabTitle?: string;
     };
+  }
+
+
+  async function askAboutIntoNotes(question: string) {
+    const q = question.trim();
+    if (!q || busy) return;
+    setError(null);
+    setBusy(true);
+    try {
+      const chatTitle = !isBlankTitle(activeMetaRef.current.title)
+        ? activeMetaRef.current.title
+        : titleFromMessages(messages);
+      const base =
+        canvasRef.current ??
+        seedWorkingCanvas({
+          title: clampTabTitle(chatTitle, "Grounding"),
+        });
+      // Short answer only — do not append to the consult spine.
+      const data = await sendConsult(q, messages);
+      const next = appendAskNoteToCanvas(
+        canvasRef.current ?? base,
+        q,
+        data.answer,
+      );
+      canvasRef.current = next;
+      setCanvas(next);
+      setCanvasEpoch((n) => n + 1);
+      setSideKind("grounding");
+      setGroundingEditing(false);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Ask about this failed");
+    } finally {
+      setBusy(false);
+    }
   }
 
   async function onSubmit(text?: string) {
@@ -1045,7 +1085,7 @@ export default function Home() {
                   </div>
                   <PointableAnswer
                     disabled={busy}
-                    onAsk={(q) => void onSubmit(q)}
+                    onAsk={(q) => void askAboutIntoNotes(q)}
                   >
                     <SimpleMarkdown text={activeBrief.brief.markdown} />
                   </PointableAnswer>
@@ -1121,7 +1161,7 @@ export default function Home() {
                           <PointableAnswer
                             text={msg.content}
                             disabled={busy}
-                            onAsk={(q) => void onSubmit(q)}
+                            onAsk={(q) => void askAboutIntoNotes(q)}
                           />
                         ) : (
                           msg.content
