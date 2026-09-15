@@ -3,6 +3,7 @@ Return ONLY valid JSON matching this schema:
 {
   "answer": string,
   "confidence": "high" | "medium" | "low",
+  "tabTitle": string,
   "intent": {
     "primary": "decide_now" | "unblock" | "assess_risk" | "persuade" | "plan" | "diagnose",
     "secondary": string[],
@@ -27,6 +28,7 @@ Rules:
   - These are consult navigation chips, not depth topics.
 - angles: 2-4 short NOUN PHRASES naming VARIATIONS of the deep read of THIS same answer (not questions, no ?). Shown only inside Depth as alternate emphases of the main deep read — not separate documents. Examples: "Failure modes", "Dependencies", "Vs alternatives", "Success metric".
 - Never invent citations.
+- tabTitle: 2–5 word sidebar label for this chat — a concrete topic noun phrase, NOT the user question and NOT the first words of the prompt. Examples: "Coral reef ecology", "Sky color physics", "Vendor lock-in risk". Max ~32 chars. No quotes, no trailing punctuation.
 - Never put variation noun phrases in hooks, and never put follow-up questions in angles.`;
 
 export const CONSULT_BRIEF_SYSTEM = `You write a longer, more detailed consult reply that expands the short lite answer.
@@ -170,3 +172,15 @@ Rules:
 - If the journal is empty and they ask to start, open with a short first entry (no section skeleton).
 - Titles: when setting a title, use a short tab label (2–5 words, ~28 chars). Prefer a noun phrase like "Coral reef" or "Sky blue", not a full question or sentence.`;
 
+
+
+export const TAB_TITLE_SYSTEM = `You name chat tabs for a consult app.
+Return ONLY valid JSON: { "title": string }
+
+Rules:
+- title: 2–5 words, max ~32 characters
+- Concrete topic noun phrase a human would recognize in a sidebar
+- Use the question AND answer to infer the subject — do not paste the question
+- No quotes, no trailing punctuation, no "Chat about…", no "Overview"
+- Good: "Coral reef ecology", "Rayleigh sky color", "SOC2 audit prep"
+- Bad: "What is a coral", "Why is the sky", "Explain quantum"`;

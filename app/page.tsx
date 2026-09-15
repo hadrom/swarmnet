@@ -44,7 +44,12 @@ import {
   promoteBriefIntoCanvas,
   seedWorkingCanvas,
 } from "@/lib/types";
-import { shortTitle } from "@/lib/titles";
+import {
+  clampTabTitle,
+  isBlankTitle,
+  shortTitle,
+  titleFromExchange,
+} from "@/lib/titles";
 import { cn } from "@/lib/utils";
 
 const LEGACY_KEYS = [
@@ -174,10 +179,16 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const chatsRef = useRef<ChatSnapshot[]>([]);
-  const activeMetaRef = useRef<{ id: string; createdAt: number; title: string }>({
+  const activeMetaRef = useRef<{
+    id: string;
+    createdAt: number;
+    title: string;
+    titleLocked: boolean;
+  }>({
     id: "",
     createdAt: Date.now(),
     title: "New chat",
+    titleLocked: false,
   });
 
   useEffect(() => {
@@ -205,6 +216,7 @@ export default function Home() {
         id: active.id,
         createdAt: active.createdAt,
         title: active.title,
+        titleLocked: Boolean(active.titleLocked),
       };
       setMessages(active.messages);
       setCanvas(active.canvas);
@@ -221,6 +233,7 @@ export default function Home() {
         id: draft.id,
         createdAt: draft.createdAt,
         title: draft.title,
+        titleLocked: false,
       };
       setChats([]);
       saveChatHistory({ activeId: draft.id, chats: [] });
@@ -240,6 +253,7 @@ export default function Home() {
       id: activeChatId,
       createdAt: activeMetaRef.current.createdAt,
       prevTitle: activeMetaRef.current.title,
+      titleLocked: activeMetaRef.current.titleLocked,
       messages,
       canvas,
       groundingEditing: groundingOpen ? groundingEditing : false,
@@ -249,6 +263,7 @@ export default function Home() {
       id: snap.id,
       createdAt: snap.createdAt,
       title: snap.title,
+      titleLocked: Boolean(snap.titleLocked),
     };
     const next = upsertChat(chatsRef.current, snap);
     chatsRef.current = next;
@@ -299,6 +314,7 @@ export default function Home() {
       id: activeChatId,
       createdAt: activeMetaRef.current.createdAt,
       prevTitle: activeMetaRef.current.title,
+      titleLocked: activeMetaRef.current.titleLocked,
       messages,
       canvas,
       groundingEditing: groundingOpen ? groundingEditing : false,
@@ -319,6 +335,7 @@ export default function Home() {
       id: draft.id,
       createdAt: draft.createdAt,
       title: draft.title,
+      titleLocked: false,
     };
     applyChatToUi(draft, uiSetters);
     setBusy(false);
@@ -339,6 +356,7 @@ export default function Home() {
       id: chat.id,
       createdAt: chat.createdAt,
       title: chat.title,
+      titleLocked: Boolean(chat.titleLocked),
     };
     applyChatToUi(chat, uiSetters);
     setBusy(false);
@@ -346,6 +364,7 @@ export default function Home() {
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
       setSidebarOpen(false);
     }
+    void maybeRefreshChatTitle(chat);
   }
 
   function deleteChat(id: string) {
@@ -359,6 +378,7 @@ export default function Home() {
           id: fallback.id,
           createdAt: fallback.createdAt,
           title: fallback.title,
+          titleLocked: Boolean(fallback.titleLocked),
         };
         applyChatToUi(fallback, uiSetters);
         saveChatHistory({ activeId: fallback.id, chats: next });
@@ -370,6 +390,7 @@ export default function Home() {
           id: draft.id,
           createdAt: draft.createdAt,
           title: draft.title,
+          titleLocked: false,
         };
         applyChatToUi(draft, uiSetters);
         setStarters(pickConsultStarters(3));
@@ -391,12 +412,78 @@ export default function Home() {
     setSideKind(null);
   }
 
+
+  function applyChatTitle(rawTitle: string, opts?: { lock?: boolean }) {
+    const nextTitle = clampTabTitle(rawTitle, activeMetaRef.current.title || "New chat");
+    if (isBlankTitle(nextTitle)) return;
+    const lock = opts?.lock ?? true;
+    activeMetaRef.current = {
+      ...activeMetaRef.current,
+      title: nextTitle,
+      titleLocked: lock,
+    };
+    const groundingOpen = sideKind === "grounding" && canvas != null;
+    const snap = snapshotFromState({
+      id: activeChatId || activeMetaRef.current.id,
+      createdAt: activeMetaRef.current.createdAt,
+      prevTitle: nextTitle,
+      titleLocked: lock,
+      messages,
+      canvas:
+        canvas && shouldReplaceGroundingTitle(canvas.title)
+          ? { ...canvas, title: nextTitle, updatedAt: Date.now() }
+          : canvas,
+      groundingEditing: groundingOpen ? groundingEditing : false,
+      sideKind: sideKind === "grounding" ? "grounding" : null,
+    });
+    if (canvas && shouldReplaceGroundingTitle(canvas.title)) {
+      setCanvas({ ...canvas, title: nextTitle, updatedAt: Date.now() });
+    }
+    const next = upsertChat(chatsRef.current, snap);
+    chatsRef.current = next;
+    setChats(next);
+    saveChatHistory({
+      activeId: activeChatId || activeMetaRef.current.id,
+      chats: next,
+    });
+  }
+
+  async function maybeRefreshChatTitle(chat: ChatSnapshot) {
+    if (chat.titleLocked) return;
+    const firstUser = chat.messages.find((m) => m.role === "user");
+    const firstAssistant = chat.messages.find((m) => m.role === "assistant");
+    if (!firstUser || !firstAssistant) return;
+    // Instant local upgrade from Q+A while the model title loads.
+    const local = titleFromExchange(firstUser.content, firstAssistant.content);
+    if (chat.id === activeMetaRef.current.id) {
+      applyChatTitle(local, { lock: false });
+    }
+    try {
+      const res = await fetch("/api/title", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          question: firstUser.content,
+          answer: firstAssistant.content,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || !data.title) return;
+      if (activeMetaRef.current.id !== chat.id) return;
+      applyChatTitle(String(data.title), { lock: true });
+    } catch {
+      // keep local title
+    }
+  }
+
   function openGrounding(msg?: ThreadMessage) {
     const seedText = msg?.content?.trim() ?? "";
-    const chatTitle = titleFromMessages(messages);
+    const chatTitle = !isBlankTitle(activeMetaRef.current.title)
+      ? activeMetaRef.current.title
+      : titleFromMessages(messages);
     const titleSeed =
       chatTitle !== "New chat" ? chatTitle : seedText;
-    const desiredTitle = shortTitle(titleSeed, "Grounding");
+    const desiredTitle = clampTabTitle(titleSeed, "Grounding");
     const next = canvas
       ? shouldReplaceGroundingTitle(canvas.title)
         ? { ...canvas, title: desiredTitle, updatedAt: Date.now() }
@@ -424,13 +511,15 @@ export default function Home() {
   function promoteBrief(mode: PromoteBriefMode) {
     if (!activeBrief) return;
     const seedText = activeBrief.message.content.trim();
-    const chatTitle = titleFromMessages(messages);
+    const chatTitle = !isBlankTitle(activeMetaRef.current.title)
+      ? activeMetaRef.current.title
+      : titleFromMessages(messages);
     const titleSeed =
       chatTitle !== "New chat" ? chatTitle : seedText;
     const base =
       canvas ??
       seedWorkingCanvas({
-        title: shortTitle(titleSeed, "Grounding"),
+        title: clampTabTitle(titleSeed, "Grounding"),
         seedAnswer: seedText,
       });
     const next = promoteBriefIntoCanvas(base, activeBrief.brief, mode);
@@ -484,6 +573,7 @@ export default function Home() {
       intent?: ThreadMessage["intent"];
       hooks: Hook[];
       angles?: Hook[];
+      tabTitle?: string;
     };
   }
 
@@ -556,6 +646,30 @@ export default function Home() {
             briefs: {},
           },
         ]);
+        const wasUntitled = !activeMetaRef.current.titleLocked;
+        if (wasUntitled) {
+          const fallback = titleFromExchange(question, data.answer);
+          applyChatTitle(data.tabTitle || fallback, { lock: Boolean(data.tabTitle) });
+          if (!data.tabTitle) {
+            void (async () => {
+              try {
+                const res = await fetch("/api/title", {
+                  method: "POST",
+                  headers: { "Content-Type": "application/json" },
+                  body: JSON.stringify({ question, answer: data.answer }),
+                });
+                const titled = await res.json();
+                if (res.ok && titled.title) {
+                  applyChatTitle(String(titled.title), { lock: true });
+                } else {
+                  applyChatTitle(fallback, { lock: true });
+                }
+              } catch {
+                applyChatTitle(fallback, { lock: true });
+              }
+            })();
+          }
+        }
       }
     } catch (err) {
       setError(err instanceof Error ? err.message : "Request failed");

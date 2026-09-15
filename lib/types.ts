@@ -1,4 +1,4 @@
-import { shortTitle } from "@/lib/titles";
+import { shortTitle, clampTabTitle, titleFromExchange } from "@/lib/titles";
 export type Hook = {
   id: string;
   label: string;
@@ -32,6 +32,8 @@ export type AnswerHotspot = {
 export type LiteResponse = {
   answer: string;
   confidence: "high" | "medium" | "low";
+  /** Short sidebar label for this chat — topic noun phrase. */
+  tabTitle?: string;
   /** Inferred user intent used to rank Ask next. */
   intent?: ConsultIntent;
   /** Exactly 3 Ask-next chips, ranked most → least likely next click. */
@@ -173,8 +175,10 @@ export function seedWorkingCanvas(opts?: {
   seedAnswer?: string;
 }): CanvasDoc {
   const seed = (opts?.seedAnswer ?? "").replace(/\s+/g, " ").trim();
-  const title = shortTitle(
-    opts?.title?.trim() || seed.split(/[.!?]/)[0]?.trim() || "",
+  const title = clampTabTitle(
+    opts?.title?.trim() ||
+      titleFromExchange("", seed, "Grounding") ||
+      "Grounding",
     "Grounding",
   );
   const opener = seed

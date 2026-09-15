@@ -1,5 +1,5 @@
 import type { CanvasDoc, ThreadMessage } from "@/lib/types";
-import { shortTitle } from "@/lib/titles";
+import { clampTabTitle, shortTitle, titleFromExchange } from "@/lib/titles";
 
 export const CHATS_STORAGE_KEY = "two-lane-chats-v1";
 export const LEGACY_SESSION_KEY = "two-lane-session-v9";
@@ -9,6 +9,8 @@ export type SideKind = "grounding";
 export type ChatSnapshot = {
   id: string;
   title: string;
+  /** When true, title was set contextually (model/heuristic lock) and must not be recomputed from the first prompt words. */
+  titleLocked?: boolean;
   createdAt: number;
   updatedAt: number;
   messages: ThreadMessage[];
@@ -28,8 +30,12 @@ export function newChatId() {
 
 export function titleFromMessages(messages: ThreadMessage[]): string {
   const firstUser = messages.find((m) => m.role === "user");
-  const raw = firstUser?.content?.replace(/\s+/g, " ").trim() ?? "";
-  return shortTitle(raw, "New chat");
+  const firstAssistant = messages.find((m) => m.role === "assistant");
+  return titleFromExchange(
+    firstUser?.content ?? "",
+    firstAssistant?.content,
+    "New chat",
+  );
 }
 
 export function emptyChat(id = newChatId()): ChatSnapshot {
@@ -50,15 +56,24 @@ export function snapshotFromState(input: {
   id: string;
   createdAt?: number;
   prevTitle?: string;
+  titleLocked?: boolean;
   messages: ThreadMessage[];
   sideKind: SideKind | null;
   canvas: CanvasDoc | null;
   groundingEditing: boolean;
 }): ChatSnapshot {
-  const title = titleFromMessages(input.messages);
+  const derived = titleFromMessages(input.messages);
+  const locked = Boolean(input.titleLocked);
+  const title =
+    locked && input.prevTitle && input.prevTitle !== "New chat"
+      ? clampTabTitle(input.prevTitle, derived)
+      : derived === "New chat" && input.prevTitle
+        ? input.prevTitle
+        : derived;
   return {
     id: input.id,
-    title: title === "New chat" && input.prevTitle ? input.prevTitle : title,
+    title,
+    titleLocked: locked,
     createdAt: input.createdAt ?? Date.now(),
     updatedAt: Date.now(),
     messages: input.messages,
@@ -99,7 +114,10 @@ export function loadChatHistory(): ChatHistoryStore | null {
       )
       .map((c) => ({
         ...c,
-        title: titleFromMessages(c.messages),
+        title: c.titleLocked && c.title && c.title !== "New chat"
+          ? clampTabTitle(c.title)
+          : titleFromMessages(c.messages),
+        titleLocked: Boolean(c.titleLocked),
         sideKind:
           c.sideKind === "grounding" ||
           (c as { sideKind?: string | null }).sideKind === "canvas"
@@ -108,7 +126,7 @@ export function loadChatHistory(): ChatHistoryStore | null {
         canvas: c.canvas
           ? {
               ...c.canvas,
-              title: shortTitle(c.canvas.title || "", "Grounding"),
+              title: clampTabTitle(c.canvas.title || "", "Grounding"),
             }
           : null,
         groundingEditing: Boolean(c.groundingEditing),
@@ -160,6 +178,7 @@ export function migrateLegacySession(): ChatSnapshot | null {
     return {
       id: newChatId(),
       title: titleFromMessages(parsed.messages),
+      titleLocked: false,
       createdAt: now,
       updatedAt: now,
       messages: parsed.messages,

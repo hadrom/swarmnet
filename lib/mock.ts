@@ -1,4 +1,4 @@
-import { shortTitle } from "@/lib/titles";
+import { shortTitle, titleFromExchange } from "@/lib/titles";
 import type {
   BriefResponse,
   CanvasDoc,
@@ -12,6 +12,7 @@ import type {
 export function mockLite(question: string): LiteResponse {
   const short = question.slice(0, 80);
   return {
+    tabTitle: titleFromExchange(question, undefined, "New chat"),
     answer: `Compressed take: treat this as a scoped decision, not a platform project. For “${short}${question.length > 80 ? "…" : ""}”, ship the smallest reversible step, name the owner, and set a kill criterion before expanding scope.`,
     confidence: "medium",
     intent: {
@@ -142,7 +143,7 @@ export function mockCanvasEdit(
     const title =
       !doc.title ||
       /untitled|working note|grounding journal|^grounding$/i.test(doc.title)
-        ? shortTitle(topic, "Grounding")
+        ? titleFromExchange(topic, undefined, "Grounding")
         : doc.title;
     const html = `<p><em>Journal opened.</em></p><hr/><p>${topic || "Conversation started."}</p>`;
     return {
@@ -154,8 +155,9 @@ export function mockCanvasEdit(
     };
   }
   if (/title|rename|call it/i.test(message)) {
-    const title = shortTitle(
+    const title = titleFromExchange(
       topic.replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, ""),
+      undefined,
       "Grounding",
     );
     return {

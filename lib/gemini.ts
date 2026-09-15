@@ -4,6 +4,7 @@ import {
   COMPACT_SYSTEM,
   CONSULT_BRIEF_SYSTEM,
   CONSULT_LITE_SYSTEM,
+  TAB_TITLE_SYSTEM,
   RESEARCH_SYSTEM,
 } from "@/lib/prompts";
 import {
@@ -23,6 +24,7 @@ import type {
   LiteResponse,
   WorkingNotes,
 } from "@/lib/types";
+import { clampTabTitle, titleFromExchange } from "@/lib/titles";
 import { applyCanvasOps, emptyNotes } from "@/lib/types";
 
 const LITE_MODEL = "gemini-3.5-flash-lite";
@@ -124,9 +126,12 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
       ? raw.confidence
       : "medium";
   const answer = String(raw.answer ?? "");
+  const tabTitleRaw = String(raw.tabTitle ?? raw.tab_title ?? "").trim();
+  const tabTitle = tabTitleRaw ? clampTabTitle(tabTitleRaw) : undefined;
   return {
     answer,
     confidence,
+    ...(tabTitle ? { tabTitle } : {}),
     intent: normalizeIntent(raw.intent),
     hooks: normalizeHooks(raw.hooks, 3),
     angles: normalizeHooks(raw.angles, 4),
@@ -227,7 +232,7 @@ export async function generateLite(input: {
     .slice(-6)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}\n\nAfter writing the short answer, infer their likely next intent from the question + your answer, then return exactly 3 ranked Ask-next hooks (most → least likely click).`;
+  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}\n\nAfter writing the short answer, also invent a short tabTitle (2–5 word topic noun phrase for the chat sidebar — not the question text). Infer their likely next intent from the question + your answer, then return exactly 3 ranked Ask-next hooks (most → least likely click).`;
 
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(
@@ -452,3 +457,25 @@ export async function generateCanvasEdit(input: {
   }
 }
 
+
+
+export async function generateTabTitle(input: {
+  question: string;
+  answer?: string;
+}): Promise<{ title: string; modelUsed: string; mocked: boolean }> {
+  const fallback = titleFromExchange(input.question, input.answer, "New chat");
+  const user = `Question:\n${input.question}\n\nAnswer:\n${(input.answer ?? "").slice(0, 600) || "(none yet)"}\n\nReturn JSON { "title": "..." } with a short sidebar tab label.`;
+  try {
+    const { data, modelUsed } = await generateJson<Record<string, unknown>>(
+      LITE_MODEL,
+      TAB_TITLE_SYSTEM,
+      user,
+      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 80 },
+    );
+    const title = clampTabTitle(String(data.title ?? ""), fallback);
+    return { title, modelUsed, mocked: false };
+  } catch (err) {
+    console.error("tab title failed, using heuristic:", err);
+    return { title: fallback, modelUsed: "mock", mocked: true };
+  }
+}
