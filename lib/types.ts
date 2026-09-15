@@ -372,11 +372,110 @@ export function applyCanvasOps(doc: CanvasDoc, ops: CanvasOp[]): CanvasDoc {
       next = { ...next, bodyText, bodyHtml };
     }
   }
+  const pinnedHtml = pinNotesToEnd(next.bodyHtml || "");
+  if (pinnedHtml !== (next.bodyHtml || "")) {
+    next = {
+      ...next,
+      bodyHtml: pinnedHtml,
+      bodyText: stripHtml(pinnedHtml),
+    };
+  }
   return { ...next, updatedAt: Date.now() };
 }
 
 const NOTES_HEADING_RE = /<h3[^>]*>\s*NOTES\s*<\/h3>/i;
 const NOTE_ITEM_RE = /<p[^>]*>\s*<strong>\s*(\d+)\.\s*<\/strong>/gi;
+
+/**
+ * Keep the reserved NOTES block (Ask-about-this definitions) at the very end
+ * of the grounding journal, even if an edit appended content after it.
+ */
+export function pinNotesToEnd(html: string): string {
+  const raw = (html || "").trim();
+  if (!raw) return raw;
+  if (
+    !NOTES_HEADING_RE.test(raw) &&
+    !/data-ask-phrase/i.test(raw) &&
+    !/id=["']ask-note-/i.test(raw)
+  ) {
+    return raw;
+  }
+
+  if (typeof DOMParser !== "undefined") {
+    const parsed = new DOMParser().parseFromString(
+      `<div id="__grounding_root">${raw}</div>`,
+      "text/html",
+    );
+    const root =
+      parsed.getElementById("__grounding_root") ?? parsed.body;
+
+    const noteNodes = Array.from(
+      root.querySelectorAll<HTMLElement>("[data-ask-phrase], [id^='ask-note-']"),
+    );
+    // Deduplicate if both selectors match the same node.
+    const seen = new Set<HTMLElement>();
+    const notes: { num: number; html: string }[] = [];
+    for (const el of noteNodes) {
+      if (seen.has(el)) continue;
+      seen.add(el);
+      const strong = el.querySelector("strong")?.textContent || "";
+      const num = Number(strong.replace(/\D/g, "")) || notes.length + 1;
+      notes.push({ num, html: el.outerHTML });
+    }
+    notes.sort((a, b) => a.num - b.num);
+
+    const headings = Array.from(root.querySelectorAll("h3")).filter((h) =>
+      /^NOTES$/i.test((h.textContent || "").trim()),
+    );
+    for (const h of headings) {
+      const prev = h.previousElementSibling;
+      if (prev && prev.tagName === "HR") prev.remove();
+      h.remove();
+    }
+    for (const el of seen) el.remove();
+
+    let body = root.innerHTML.trim();
+    body = body
+      .replace(/(?:<hr\s*\/?>\s*){2,}/gi, "<hr/>")
+      .replace(/(?:<hr\s*\/?>\s*)+$/gi, "")
+      .trim();
+
+    if (notes.length === 0) {
+      // Preserve an empty NOTES heading only if one existed.
+      if (headings.length === 0) return body || raw;
+      if (!body || !stripHtml(body)) return "<h3>NOTES</h3>";
+      return `${body}<hr/><h3>NOTES</h3>`;
+    }
+
+    const notesBlock = `<h3>NOTES</h3>${notes.map((n) => n.html).join("")}`;
+    if (!body || !stripHtml(body)) return notesBlock;
+    return `${body}<hr/>${notesBlock}`;
+  }
+
+  // Regex fallback: pull ask-note paragraphs + NOTES heading out, then re-append.
+  const noteChunks: { num: number; html: string }[] = [];
+  const withoutNotes = raw
+    .replace(NOTES_HEADING_RE, "")
+    .replace(
+      /<p\b[^>]*\bid=["']ask-note-\d+["'][^>]*>[\s\S]*?<\/p>/gi,
+      (chunk) => {
+        const numMatch = chunk.match(/<strong>\s*(\d+)\./i);
+        noteChunks.push({
+          num: Number(numMatch?.[1] || noteChunks.length + 1),
+          html: chunk,
+        });
+        return "";
+      },
+    )
+    .replace(/(?:<hr\s*\/?>\s*){2,}/gi, "<hr/>")
+    .replace(/(?:<hr\s*\/?>\s*)+$/gi, "")
+    .trim();
+  if (noteChunks.length === 0) return withoutNotes || raw;
+  noteChunks.sort((a, b) => a.num - b.num);
+  const notesBlock = `<h3>NOTES</h3>${noteChunks.map((n) => n.html).join("")}`;
+  if (!withoutNotes || !stripHtml(withoutNotes)) return notesBlock;
+  return `${withoutNotes}<hr/>${notesBlock}`;
+}
 
 export type AskNoteRef = {
   id: string;

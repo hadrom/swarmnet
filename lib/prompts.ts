@@ -157,6 +157,7 @@ CanvasOp is one of:
 Document shape:
 - Freeform chronological prose. Prefer appending new entries with <hr/> then <p>...</p>.
 - Do NOT invent section headings like Bottom line, Decisions, Open questions, or Notes.
+- A reserved trailing <h3>NOTES</h3> block may already exist for Ask-about-this definitions. Never write inside NOTES and never append after it — put journal content before NOTES. The app keeps NOTES pinned at the bottom.
 - No special subtitles for "agreed" / "disagreed" — weave that into the journal prose itself.
 
 Rules:
