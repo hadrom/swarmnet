@@ -36,6 +36,21 @@ export function mockLite(question: string): LiteResponse {
         label: "What's in v1?",
         why: "Scope is still fuzzy",
       },
+      {
+        id: "risk",
+        label: "Biggest risk here?",
+        why: "Risk not yet named",
+      },
+      {
+        id: "timing",
+        label: "By when?",
+        why: "Timing left open",
+      },
+      {
+        id: "cost",
+        label: "What's the cost?",
+        why: "Tradeoff still unclear",
+      },
     ],
     angles: [
       { id: "risks", label: "Failure modes" },

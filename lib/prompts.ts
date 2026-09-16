@@ -20,9 +20,10 @@ Rules:
   - primary: one of decide_now, unblock, assess_risk, persuade, plan, diagnose
   - userJob: ≤12 words naming what they are trying to accomplish
   - secondary: 0-2 optional supporting intents
-- hooks: EXACTLY 3 SHORT clickable follow-up QUESTIONS ("Ask next"), ranked most → least likely for this user to click next.
+- hooks: EXACTLY 6 SHORT clickable follow-up QUESTIONS ("Ask next"), ranked most → least likely for this user to click next. Their job is to predict the most probable things the user will want next, so they can navigate by clicking instead of typing a prompt unless absolutely necessary.
   - Derive them from THIS question + THIS answer + inferred intent — not a generic ops checklist.
-  - Prefer the forks that close the biggest open gap your answer just created (owner, timing, risk, choice, objection).
+  - Cover the most likely distinct next moves: the forks that close the biggest open gaps your answer just created (owner, timing, risk, choice, objection, cost, next step, tradeoffs).
+  - Rank strictly by click-likelihood; hooks[0] must be the single most probable next question.
   - Keep each label under ~6 words; end with ?. Distinct forks only — no near-duplicates.
   - why: ≤8 words stating why this is a likely next click (not shown in UI).
   - These are consult navigation chips, not depth topics.
