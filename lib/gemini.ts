@@ -3,6 +3,7 @@ import {
   CANVAS_SYSTEM,
   COMPACT_SYSTEM,
   CONSULT_BRIEF_SYSTEM,
+  CONSULT_BRIEF_STREAM_SYSTEM,
   CONSULT_LITE_SYSTEM,
   TAB_TITLE_SYSTEM,
   RESEARCH_SYSTEM,
@@ -283,6 +284,197 @@ export async function generateBrief(input: {
       mocked: true,
     };
   }
+}
+
+// ---------------------------------------------------------------------------
+// Streaming "Read deeper" (Depth) — thinking → forming → final.
+// Prefers a heavier reasoning model via OpenRouter (streams reasoning tokens as
+// the "thinking" phase), falls back to a Gemini stream, then a simulated mock
+// stream so the UX works offline / without any key.
+// ---------------------------------------------------------------------------
+
+const OPENROUTER_URL = "https://openrouter.ai/api/v1/chat/completions";
+// Free reasoning models, tried in order. Free upstreams get overloaded/rate-limited,
+// so we fall through to the next model, then to Gemini, then to a mock stream.
+const OPENROUTER_MODELS = [
+  "nex-agi/nex-n2.5-pro:free",
+  "nvidia/nemotron-3-super-120b-a12b:free",
+  "z-ai/glm-5.2:free",
+];
+
+export type BriefStreamEvent =
+  | { type: "answer"; text: string }
+  | { type: "done"; markdown: string; modelUsed: string; mocked: boolean }
+  | { type: "error"; error: string };
+
+type BriefInput = {
+  question: string;
+  liteAnswer: string;
+  hookLabel?: string;
+  history?: { role: string; content: string }[];
+};
+
+function briefUserPrompt(input: BriefInput): string {
+  const historyBlock = (input.history ?? [])
+    .slice(-12)
+    .map((m) => `${m.role}: ${m.content}`)
+    .join("\n");
+  return `Conversation so far (established context — treat earlier turns as given):\n${historyBlock || "(none)"}\n\nTrigger question for this brief:\n${input.question}\n\nLite answer being expanded:\n${input.liteAnswer}\n\nVariation focus (reweight the same deep read; blank = main):\n${input.hookLabel ?? "(main deep read)"}`;
+}
+
+const sleep = (ms: number) => new Promise((r) => setTimeout(r, ms));
+
+async function* streamOpenRouter(
+  model: string,
+  user: string,
+): AsyncGenerator<BriefStreamEvent> {
+  const res = await fetch(OPENROUTER_URL, {
+    method: "POST",
+    headers: {
+      Authorization: `Bearer ${process.env.OPENROUTER_API_KEY}`,
+      "Content-Type": "application/json",
+      "X-Title": "two-lane-llm-demo",
+    },
+    body: JSON.stringify({
+      model,
+      stream: true,
+      messages: [
+        { role: "system", content: CONSULT_BRIEF_STREAM_SYSTEM },
+        { role: "user", content: user },
+      ],
+      // Reason internally at high effort, but never stream the chain-of-thought back.
+      reasoning: { effort: "high", exclude: true },
+      max_tokens: 2048,
+    }),
+  });
+  if (!res.ok || !res.body) {
+    const detail = await res.text().catch(() => "");
+    throw new Error(`OpenRouter ${res.status}: ${detail.slice(0, 200)}`);
+  }
+
+  const reader = res.body.getReader();
+  const decoder = new TextDecoder();
+  let buf = "";
+  let markdown = "";
+  let emittedContent = false;
+  while (true) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buf += decoder.decode(value, { stream: true });
+    const lines = buf.split("\n");
+    buf = lines.pop() ?? "";
+    for (const line of lines) {
+      const trimmed = line.trim();
+      if (!trimmed.startsWith("data:")) continue;
+      const data = trimmed.slice(5).trim();
+      if (!data || data === "[DONE]") continue;
+      let json: Record<string, unknown>;
+      try {
+        json = JSON.parse(data);
+      } catch {
+        continue;
+      }
+      // Some providers surface overload/rate-limit errors mid-stream (HTTP 200).
+      if (json.error) {
+        const em =
+          (json.error as { message?: string })?.message ?? "provider error";
+        if (!emittedContent) throw new Error(`OpenRouter stream: ${em}`);
+        break;
+      }
+      const choices = json.choices as
+        | Array<{ delta?: { content?: string } }>
+        | undefined;
+      const delta = choices?.[0]?.delta ?? {};
+      if (delta.content) {
+        markdown += delta.content;
+        emittedContent = true;
+        yield { type: "answer", text: String(delta.content) };
+      }
+    }
+  }
+  if (!emittedContent || !markdown.trim()) {
+    throw new Error("OpenRouter stream produced no answer");
+  }
+  yield {
+    type: "done",
+    markdown: markdown.trim(),
+    modelUsed: model,
+    mocked: false,
+  };
+}
+
+async function* streamGemini(user: string): AsyncGenerator<BriefStreamEvent> {
+  const client = getClient();
+  if (!client) throw new Error("NO_API_KEY");
+  const stream = await client.models.generateContentStream({
+    model: DEPTH_MODEL,
+    contents: user,
+    config: {
+      systemInstruction: CONSULT_BRIEF_STREAM_SYSTEM,
+      temperature: 0.4,
+      maxOutputTokens: 1400,
+      thinkingConfig: { thinkingLevel: ThinkingLevel.HIGH },
+    },
+  });
+  let markdown = "";
+  for await (const chunk of stream) {
+    const text = responseText(chunk);
+    if (text) {
+      markdown += text;
+      yield { type: "answer", text };
+    }
+  }
+  if (!markdown.trim()) throw new Error("Empty model response");
+  yield {
+    type: "done",
+    markdown: markdown.trim(),
+    modelUsed: DEPTH_MODEL,
+    mocked: false,
+  };
+}
+
+async function* streamMockBrief(input: BriefInput): AsyncGenerator<BriefStreamEvent> {
+  const { markdown } = mockBrief(input.question, input.hookLabel, input.history);
+  // Emit quickly; the client paces the on-screen reveal to reading speed.
+  for (const token of markdown.split(/(\s+)/)) {
+    if (token) yield { type: "answer", text: token };
+    await sleep(6);
+  }
+  yield { type: "done", markdown, modelUsed: "mock", mocked: true };
+}
+
+/**
+ * Stream a deep read for "Read deeper". Tries OpenRouter's reasoning model
+ * first (emitting reasoning tokens as a "thinking" phase), then a Gemini
+ * stream, then a simulated mock stream. Fallback only happens on connection
+ * failure before any tokens are emitted, so partial output is never duplicated.
+ */
+export async function* streamBrief(
+  input: BriefInput,
+): AsyncGenerator<BriefStreamEvent> {
+  const user = briefUserPrompt(input);
+
+  if (process.env.OPENROUTER_API_KEY) {
+    for (const model of OPENROUTER_MODELS) {
+      try {
+        yield* streamOpenRouter(model, user);
+        return;
+      } catch (err) {
+        console.error(`openrouter ${model} failed, trying next:`, err);
+      }
+    }
+  }
+
+  if (process.env.GEMINI_API_KEY) {
+    try {
+      yield* streamGemini(user);
+      return;
+    } catch (err) {
+      console.error("gemini stream failed, using mock:", err);
+    }
+  }
+
+  yield* streamMockBrief(input);
 }
 
 export async function reviseNotes(input: {

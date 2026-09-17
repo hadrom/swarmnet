@@ -5,7 +5,6 @@ import {
   ArrowUp,
   BookOpen,
   ChevronDown,
-  FileText,
   Loader2,
   MessageCircle,
   PanelRight,
@@ -82,10 +81,44 @@ function briefKeyFor(hook?: Hook) {
   return hook?.id ?? FULL_BRIEF_KEY;
 }
 
+/** Precompute the Main deep read once the user has dwelled on a consult answer this long. */
+const DWELL_PREFETCH_MS = 5000;
+
+/** Generic high-signal follow-ups used to backfill to a full 6 when the model returns fewer. */
+const FALLBACK_ASK_NEXT: Hook[] = [
+  { id: "fallback-risk", label: "What's the biggest risk?" },
+  { id: "fallback-step", label: "Smallest first step?" },
+  { id: "fallback-owner", label: "Who owns the next step?" },
+  { id: "fallback-timing", label: "By when?" },
+  { id: "fallback-cost", label: "What's the cost?" },
+  { id: "fallback-alt", label: "What are the alternatives?" },
+  { id: "fallback-measure", label: "How do we measure success?" },
+  { id: "fallback-change", label: "What would change this?" },
+];
+
+/** Always return exactly 6 distinct hooks, padding with fallbacks when needed. */
+function ensureSixHooks(hooks: Hook[]): Hook[] {
+  const out: Hook[] = [];
+  const seen = new Set<string>();
+  const push = (h: Hook) => {
+    const key = h.label.trim().toLowerCase();
+    if (!key || seen.has(key)) return;
+    seen.add(key);
+    out.push(h);
+  };
+  hooks.forEach(push);
+  for (const f of FALLBACK_ASK_NEXT) {
+    if (out.length >= 6) break;
+    push(f);
+  }
+  return out.slice(0, 6);
+}
+
 /**
  * "Ask next" as a dropdown menu of the most-probable follow-up questions,
  * ranked most → least likely. Picking one sends it as the next consult
- * question so the user rarely has to type a prompt.
+ * question so the user rarely has to type a prompt. Always shows a full
+ * 2×3 grid of 6 suggestions.
  */
 function AskNextMenu({
   hooks,
@@ -121,6 +154,8 @@ function AskNextMenu({
 
   if (hooks.length === 0) return null;
 
+  const items = ensureSixHooks(hooks);
+
   return (
     <div className="space-y-1" ref={ref}>
       <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
@@ -150,9 +185,9 @@ function AskNextMenu({
         {open ? (
           <div
             role="listbox"
-            className="absolute left-0 z-30 mt-1 w-72 max-w-[85vw] overflow-hidden rounded-lg border border-amber-200 bg-white shadow-lg dark:border-amber-900/70 dark:bg-zinc-900"
+            className="absolute left-0 z-30 mt-1 grid max-w-[90vw] grid-cols-[max-content_max-content] grid-rows-3 justify-items-start gap-1.5 overflow-x-auto rounded-lg border border-amber-200 bg-white p-1.5 shadow-lg dark:border-amber-900/70 dark:bg-zinc-900"
           >
-            {hooks.map((hook, i) => (
+            {items.map((hook) => (
               <button
                 key={hook.id}
                 type="button"
@@ -164,14 +199,9 @@ function AskNextMenu({
                   onPick(hook);
                 }}
                 title={hook.why || "Send this as the next consult question"}
-                className="flex w-full items-center gap-2 border-b border-amber-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-amber-50 disabled:opacity-50 dark:border-zinc-800 dark:hover:bg-amber-950/40"
+                className="inline-flex w-fit items-center whitespace-nowrap rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-950 transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70"
               >
-                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-semibold text-amber-800 dark:bg-amber-900/60 dark:text-amber-100">
-                  {i + 1}
-                </span>
-                <span className="text-[12px] font-medium text-zinc-800 dark:text-zinc-100">
-                  {hook.label}
-                </span>
+                {hook.label}
               </button>
             ))}
           </div>
@@ -270,8 +300,22 @@ export default function Home() {
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [modelHint, setModelHint] = useState<string | null>(null);
+  // Testing metric for the dwell precompute: how often the deep read was ready
+  // (ready), still computing (waited), or not yet started (early) at click time.
+  const [computeStats, setComputeStats] = useState({
+    ready: 0,
+    waited: 0,
+    early: 0,
+  });
 
   const [openBrief, setOpenBrief] = useState<OpenBriefRef | null>(null);
+  const [streamingBrief, setStreamingBrief] = useState<{
+    messageId: string;
+    key: string;
+    title: string;
+    hookId?: string;
+    markdown: string;
+  } | null>(null);
   const [sideKind, setSideKind] = useState<SideKind | null>(null);
   const [canvas, setCanvas] = useState<CanvasDoc | null>(null);
   const canvasRef = useRef<CanvasDoc | null>(null);
@@ -286,6 +330,11 @@ export default function Home() {
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
   const chatsRef = useRef<ChatSnapshot[]>([]);
+  const prefetchRef = useRef<{
+    id: string;
+    key: string;
+    controller: AbortController;
+  } | null>(null);
   const activeMetaRef = useRef<{
     id: string;
     createdAt: number;
@@ -394,7 +443,13 @@ export default function Home() {
     return { message: msg, brief, key: openBrief.key };
   }, [openBrief, messages]);
 
-  const showBriefPane = activeBrief !== null;
+  const streamingOpen = Boolean(
+    streamingBrief &&
+      openBrief &&
+      streamingBrief.messageId === openBrief.messageId &&
+      streamingBrief.key === openBrief.key,
+  );
+  const showBriefPane = activeBrief !== null || streamingOpen;
   const showGroundingPane = sideKind === "grounding" && canvas != null;
   const describedPhrases: DescribedPhrase[] = useMemo(
     () =>
@@ -462,6 +517,7 @@ export default function Home() {
 
   function startNewChat() {
     if (busy) return;
+    cancelPrefetch();
     const next = flushCurrentChat();
     const draft = emptyChat();
     setActiveChatId(draft.id);
@@ -749,6 +805,7 @@ export default function Home() {
   async function onSubmit(text?: string) {
     const question = (text ?? input).trim();
     if (!question || busy) return;
+    cancelPrefetch();
     setError(null);
     setInput("");
 
@@ -847,26 +904,39 @@ export default function Home() {
     }
   }
 
-  async function onElaborate(msg: ThreadMessage, hook?: Hook) {
-    if (busy) return;
+  // Single streaming worker for a deep read, shared by the dwell precompute
+  // (background) and an explicit "Read deeper" click. It streams from /api/brief,
+  // surfaces progress into streamingBrief flushed per completed paragraph, and
+  // caches the full result on completion. Only one runs at a time.
+  async function computeBrief(msg: ThreadMessage, hook?: Hook) {
+    if (msg.role !== "assistant") return;
+    if (msg.kind === "grounding" || msg.kind === "canvas") return;
     const key = briefKeyFor(hook);
-    const existing = msg.briefs?.[key];
-    if (existing) {
-      openSavedBrief(msg.id, key);
-      return;
+    if (msg.briefs?.[key]) return;
+    if (prefetchRef.current) {
+      if (prefetchRef.current.id === msg.id && prefetchRef.current.key === key) {
+        return; // already computing this exact brief
+      }
+      prefetchRef.current.controller.abort(); // different target → take over
+      prefetchRef.current = null;
     }
-
-    setBusy(true);
-    setError(null);
+    const title = hook?.label ?? "Main";
+    const controller = new AbortController();
+    prefetchRef.current = { id: msg.id, key, controller };
+    setStreamingBrief({
+      messageId: msg.id,
+      key,
+      title,
+      hookId: hook?.id,
+      markdown: "",
+    });
+    console.info("[read-deeper] compute start", { id: msg.id, key });
     try {
       const idx = messages.findIndex((m) => m.id === msg.id);
       const prior = idx >= 0 ? messages.slice(0, idx + 1) : [msg];
       const priorUser = [...prior].reverse().find((m) => m.role === "user");
       const question = priorUser?.content ?? msg.content;
-      const history = prior.map((m) => ({
-        role: m.role,
-        content: m.content,
-      }));
+      const history = prior.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/brief", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -875,23 +945,158 @@ export default function Home() {
           liteAnswer: msg.content,
           hookLabel: hook?.label,
           history,
+          stream: true,
         }),
+        signal: controller.signal,
       });
-      const data = await res.json();
-      if (!res.ok) throw new Error(data.error || "Brief failed");
+      if (!res.ok || !res.body) {
+        const data = await res.json().catch(() => ({}));
+        throw new Error(data.error || "Brief failed");
+      }
+      const reader = res.body.getReader();
+      const decoder = new TextDecoder();
+      let buf = "";
+      let received = "";
+      let shownLen = 0;
+      let doneMarkdown = "";
+      let modelUsed = "";
+      let mocked = false;
+      let streamError: string | null = null;
+
+      // Reveal only whole paragraphs as they complete (no per-word pacing).
+      const flushParagraphs = () => {
+        const lastBreak = received.lastIndexOf("\n\n");
+        if (lastBreak > shownLen) {
+          shownLen = lastBreak;
+          const shown = received.slice(0, shownLen);
+          setStreamingBrief((s) =>
+            s && s.messageId === msg.id && s.key === key
+              ? { ...s, markdown: shown }
+              : s,
+          );
+        }
+      };
+      const handle = (line: string) => {
+        const trimmed = line.trim();
+        if (!trimmed) return;
+        let ev: {
+          type: string;
+          text?: string;
+          markdown?: string;
+          modelUsed?: string;
+          mocked?: boolean;
+          error?: string;
+        };
+        try {
+          ev = JSON.parse(trimmed);
+        } catch {
+          return;
+        }
+        if (ev.type === "answer") {
+          received += ev.text ?? "";
+          flushParagraphs();
+        } else if (ev.type === "done") {
+          doneMarkdown = ev.markdown || received;
+          modelUsed = ev.modelUsed ?? "";
+          mocked = Boolean(ev.mocked);
+        } else if (ev.type === "error") {
+          streamError = ev.error || "Brief failed";
+        }
+      };
+
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += decoder.decode(value, { stream: true });
+        const lines = buf.split("\n");
+        buf = lines.pop() ?? "";
+        for (const line of lines) handle(line);
+      }
+      if (buf) handle(buf);
+      if (streamError) throw new Error(streamError);
+
+      const finalMarkdown = (doneMarkdown || received).trim();
+      if (!finalMarkdown) throw new Error("Empty deep read");
       saveBriefOnMessage(msg.id, key, {
-        title: hook?.label ?? "Main",
-        markdown: data.markdown,
+        title,
+        markdown: finalMarkdown,
         hookId: hook?.id,
       });
       setModelHint(
-        data.mocked ? "mock · fallback" : data.modelUsed || "gemini-3.8-flash",
+        mocked ? "mock · fallback" : modelUsed || "gemini-3.8-flash",
       );
+      console.info("[read-deeper] compute done", { id: msg.id, key });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Brief failed");
+      if (!(err instanceof DOMException && err.name === "AbortError")) {
+        console.info("[read-deeper] compute failed", err);
+      }
     } finally {
-      setBusy(false);
+      if (
+        prefetchRef.current?.id === msg.id &&
+        prefetchRef.current?.key === key
+      ) {
+        prefetchRef.current = null;
+      }
+      setStreamingBrief((s) =>
+        s && s.messageId === msg.id && s.key === key ? null : s,
+      );
     }
+  }
+
+  function cancelPrefetch() {
+    prefetchRef.current?.controller.abort();
+    prefetchRef.current = null;
+  }
+
+  // After the user dwells on a fresh consult answer for DWELL_PREFETCH_MS, precompute
+  // its Main deep read in the background so opening "Read deeper" is instant.
+  useEffect(() => {
+    if (busy) return;
+    const last = messages[messages.length - 1];
+    if (!last || last.role !== "assistant") return;
+    if (last.kind === "grounding" || last.kind === "canvas") return;
+    if (last.briefs?.[FULL_BRIEF_KEY]) return;
+    const timer = window.setTimeout(() => {
+      void computeBrief(last);
+    }, DWELL_PREFETCH_MS);
+    return () => window.clearTimeout(timer);
+    // computeBrief is stable enough for this dwell trigger.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [messages, busy]);
+
+  async function onElaborate(msg: ThreadMessage, hook?: Hook) {
+    const key = briefKeyFor(hook);
+
+    // Testing metric: how often is the Main precompute ready when the user clicks?
+    if (key === FULL_BRIEF_KEY) {
+      const state: "ready" | "waited" | "early" = msg.briefs?.[FULL_BRIEF_KEY]
+        ? "ready"
+        : prefetchRef.current?.id === msg.id &&
+            prefetchRef.current?.key === FULL_BRIEF_KEY
+          ? "waited"
+          : "early";
+      setComputeStats((s) => ({ ...s, [state]: s[state] + 1 }));
+      console.info("[read-deeper] open", { id: msg.id, state });
+    }
+
+    // Precompute finished before the click → show the full deep read immediately.
+    const existing = msg.briefs?.[key];
+    if (existing) {
+      openSavedBrief(msg.id, key);
+      return;
+    }
+
+    // Not ready yet: open the pane and attach to (or start) the compute. The pane
+    // shows paragraphs as they complete, then the full text once done.
+    setError(null);
+    setOpenBrief({ messageId: msg.id, key });
+    if (
+      prefetchRef.current?.id === msg.id &&
+      prefetchRef.current?.key === key
+    ) {
+      return; // a compute is already in flight; the pane will show its progress
+    }
+    void computeBrief(msg, hook);
   }
 
   function onHookClick(_msg: ThreadMessage, hook: Hook) {
@@ -1030,7 +1235,7 @@ export default function Home() {
             <div className="flex items-center gap-2">
               <Sparkles className="h-4 w-4 shrink-0 text-zinc-500" />
               <h1 className="truncate text-sm font-semibold tracking-tight">
-                Two-lane LLM demo
+                Unweaver chunked streaming variant
               </h1>
               {editingGrounding ? (
                 <Badge className="border-sky-400 bg-sky-700 text-white dark:border-sky-600 dark:bg-sky-600">
@@ -1046,6 +1251,13 @@ export default function Home() {
             </div>
           </div>
           <div className="flex shrink-0 items-center gap-2">
+            <Badge
+              className="hidden sm:inline-flex"
+              title="Read-deeper precompute at click: ready (cached in time) / waited (still computing) / early (before dwell precompute started)"
+            >
+              deep {computeStats.ready}✓ · {computeStats.waited}⏳ ·{" "}
+              {computeStats.early}✗
+            </Badge>
             {modelHint ? (
               <Badge className="hidden sm:inline-flex">{modelHint}</Badge>
             ) : null}
@@ -1085,15 +1297,26 @@ export default function Home() {
               : "grid-cols-1",
         )}
       >
-        {showBriefPane && activeBrief ? (
+        {showBriefPane && (activeBrief || streamingOpen) ? (
           <section className="flex min-h-0 flex-col overflow-hidden border-b border-zinc-200 bg-white lg:border-b-0 lg:border-r dark:border-zinc-800 dark:bg-zinc-950">
             <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-3 dark:border-zinc-800">
               <div className="min-w-0">
-                <h2 className="truncate text-sm font-semibold">
-                  Depth · {activeBrief.brief.title}
+                <h2 className="flex items-center gap-2 truncate text-sm font-semibold">
+                  <span className="truncate">
+                    Depth ·{" "}
+                    {streamingOpen && streamingBrief
+                      ? streamingBrief.title
+                      : activeBrief?.brief.title}
+                  </span>
+                  {streamingOpen && streamingBrief ? (
+                    <span className="inline-flex shrink-0 items-center gap-1 rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-medium text-amber-800 dark:bg-amber-950/60 dark:text-amber-200">
+                      <Loader2 className="h-2.5 w-2.5 animate-spin" />
+                      forming
+                    </span>
+                  ) : null}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  Deep read left of consult — Variations reweight this answer; Half / Full append into Grounding
+                  Deep read left of consult — Half / Full append into Grounding
                 </p>
               </div>
               <Button
@@ -1108,64 +1331,22 @@ export default function Home() {
               </Button>
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-              <div className="space-y-4">
-                  {(() => {
-                    const src = activeBrief.message;
-                    const angles = src.angles ?? [];
-                    const fullSaved = Boolean(src.briefs?.[FULL_BRIEF_KEY]);
-                    const fullOpen = openBrief?.key === FULL_BRIEF_KEY;
-                    if (angles.length === 0 && !fullSaved) return null;
-                    return (
-                      <div className="space-y-1.5">
-                        <p className="text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-                          Variations
-                        </p>
-                        <div className="inline-flex max-w-full flex-wrap gap-0.5 rounded-lg border border-zinc-200 bg-zinc-100/80 p-0.5 dark:border-zinc-700 dark:bg-zinc-900/80">
-                          <button
-                            type="button"
-                            disabled={busy}
-                            onClick={() => void onElaborate(src)}
-                            className={cn(
-                              "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                              fullOpen || (!openBrief?.key && fullSaved)
-                                ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                                : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
-                            )}
-                            title="Main deep read of this answer"
-                          >
-                            {fullSaved ? (
-                              <FileText className="h-3 w-3" />
-                            ) : null}
-                            Main
-                          </button>
-                          {angles.map((angle) => {
-                            const saved = src.briefs?.[angle.id];
-                            const isOpen =
-                              openBrief?.messageId === src.id &&
-                              openBrief.key === angle.id;
-                            return (
-                              <button
-                                key={angle.id}
-                                type="button"
-                                disabled={busy}
-                                onClick={() => void onElaborate(src, angle)}
-                                className={cn(
-                                  "inline-flex items-center gap-1 rounded-md px-2.5 py-1 text-[11px] font-medium transition disabled:opacity-50",
-                                  isOpen
-                                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
-                                    : "text-zinc-600 hover:text-zinc-900 dark:text-zinc-400 dark:hover:text-zinc-100",
-                                )}
-                                title="Same deep read, reweighted toward this facet"
-                              >
-                                {saved ? <FileText className="h-3 w-3" /> : null}
-                                {angle.label}
-                              </button>
-                            );
-                          })}
-                        </div>
-                      </div>
-                    );
-                  })()}
+              {streamingOpen && streamingBrief ? (
+                <div className="space-y-4">
+                  {streamingBrief.markdown ? (
+                    <div>
+                      <SimpleMarkdown text={streamingBrief.markdown} />
+                      <span className="ml-0.5 inline-block h-3 w-1.5 animate-pulse rounded-sm bg-zinc-400 align-middle dark:bg-zinc-500" />
+                    </div>
+                  ) : (
+                    <p className="flex items-center gap-1.5 text-xs text-zinc-500">
+                      <Loader2 className="h-3 w-3 animate-spin" /> Forming the
+                      deep read…
+                    </p>
+                  )}
+                </div>
+              ) : activeBrief ? (
+                <div className="space-y-4">
                   <div className="flex flex-wrap gap-1.5 rounded-xl border border-sky-200 bg-sky-50/80 p-2 dark:border-sky-900 dark:bg-sky-950/30">
                     <p className="w-full text-[11px] font-medium text-sky-950 dark:text-sky-100">
                       Add to Grounding
@@ -1202,6 +1383,7 @@ export default function Home() {
                     <SimpleMarkdown text={activeBrief.brief.markdown} />
                   </PointableAnswer>
                 </div>
+              ) : null}
             </ScrollArea>
           </section>
         ) : null}

@@ -1,5 +1,7 @@
 import { NextResponse } from "next/server";
-import { generateBrief } from "@/lib/gemini";
+import { generateBrief, streamBrief } from "@/lib/gemini";
+
+export const runtime = "nodejs";
 
 export async function POST(req: Request) {
   try {
@@ -14,6 +16,43 @@ export async function POST(req: Request) {
     }
     const hookLabel = body.hookLabel ? String(body.hookLabel) : undefined;
     const history = Array.isArray(body.history) ? body.history : [];
+
+    if (body.stream) {
+      const encoder = new TextEncoder();
+      const stream = new ReadableStream({
+        async start(controller) {
+          try {
+            for await (const ev of streamBrief({
+              question,
+              liteAnswer,
+              hookLabel,
+              history,
+            })) {
+              controller.enqueue(encoder.encode(JSON.stringify(ev) + "\n"));
+            }
+          } catch (err) {
+            controller.enqueue(
+              encoder.encode(
+                JSON.stringify({
+                  type: "error",
+                  error: err instanceof Error ? err.message : "brief failed",
+                }) + "\n",
+              ),
+            );
+          } finally {
+            controller.close();
+          }
+        },
+      });
+      return new Response(stream, {
+        headers: {
+          "Content-Type": "application/x-ndjson; charset=utf-8",
+          "Cache-Control": "no-cache, no-transform",
+          Connection: "keep-alive",
+        },
+      });
+    }
+
     const result = await generateBrief({
       question,
       liteAnswer,

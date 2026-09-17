@@ -13,7 +13,7 @@ const geistMono = Geist_Mono({
 });
 
 export const metadata: Metadata = {
-  title: "Two-lane LLM demo",
+  title: "Unweaver chunked streaming variant",
   description:
     "Consult (short answers + on-demand elaborate) and Grounding (writable ground-truth doc) interaction prototype.",
 };
