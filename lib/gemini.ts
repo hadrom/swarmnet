@@ -133,7 +133,7 @@ function normalizeLite(raw: Record<string, unknown>): LiteResponse {
     confidence,
     ...(tabTitle ? { tabTitle } : {}),
     intent: normalizeIntent(raw.intent),
-    hooks: normalizeHooks(raw.hooks, 3),
+    hooks: normalizeHooks(raw.hooks, 6),
     angles: normalizeHooks(raw.angles, 4),
   };
 }
@@ -232,14 +232,14 @@ export async function generateLite(input: {
     .slice(-6)
     .map((m) => `${m.role}: ${m.content}`)
     .join("\n");
-  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}\n\nAfter writing the short answer, also invent a short tabTitle (2–5 word topic noun phrase for the chat sidebar — not the question text). Infer their likely next intent from the question + your answer, then return exactly 3 ranked Ask-next hooks (most → least likely click).`;
+  const user = `Conversation so far:\n${historyBlock || "(none)"}\n\nUser question:\n${input.question}\n\nAfter writing the short answer, also invent a short tabTitle (2–5 word topic noun phrase for the chat sidebar — not the question text). Infer their likely next intent from the question + your answer, then return exactly 6 ranked Ask-next hooks (most → least likely click).`;
 
   try {
     const { data, modelUsed } = await generateJson<Record<string, unknown>>(
       LITE_MODEL,
       CONSULT_LITE_SYSTEM,
       user,
-      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 550 },
+      { thinking: ThinkingLevel.MINIMAL, maxOutputTokens: 800 },
     );
     return { ...normalizeLite(data), modelUsed, mocked: false };
   } catch (err) {

@@ -4,6 +4,7 @@ import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowUp,
   BookOpen,
+  ChevronDown,
   FileText,
   Loader2,
   MessageCircle,
@@ -79,6 +80,105 @@ function uid() {
 
 function briefKeyFor(hook?: Hook) {
   return hook?.id ?? FULL_BRIEF_KEY;
+}
+
+/**
+ * "Ask next" as a dropdown menu of the most-probable follow-up questions,
+ * ranked most → least likely. Picking one sends it as the next consult
+ * question so the user rarely has to type a prompt.
+ */
+function AskNextMenu({
+  hooks,
+  userJob,
+  busy,
+  onPick,
+}: {
+  hooks: Hook[];
+  userJob?: string;
+  busy: boolean;
+  onPick: (hook: Hook) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const ref = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    function onDocPointer(e: MouseEvent) {
+      if (ref.current && !ref.current.contains(e.target as Node)) {
+        setOpen(false);
+      }
+    }
+    function onKey(e: KeyboardEvent) {
+      if (e.key === "Escape") setOpen(false);
+    }
+    document.addEventListener("mousedown", onDocPointer);
+    document.addEventListener("keydown", onKey);
+    return () => {
+      document.removeEventListener("mousedown", onDocPointer);
+      document.removeEventListener("keydown", onKey);
+    };
+  }, [open]);
+
+  if (hooks.length === 0) return null;
+
+  return (
+    <div className="space-y-1" ref={ref}>
+      <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
+        <MessageCircle className="h-3 w-3" />
+        Ask next
+        {userJob ? (
+          <span className="font-normal normal-case tracking-normal text-zinc-400">
+            · {userJob}
+          </span>
+        ) : null}
+      </p>
+      <div className="relative">
+        <button
+          type="button"
+          disabled={busy}
+          onClick={() => setOpen((o) => !o)}
+          aria-haspopup="listbox"
+          aria-expanded={open}
+          className="inline-flex items-center gap-1.5 rounded-full border border-amber-200 bg-amber-50 px-3 py-1 text-[11px] font-medium text-amber-950 transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70"
+        >
+          <Sparkles className="h-3 w-3" />
+          Suggested follow-ups
+          <ChevronDown
+            className={cn("h-3 w-3 transition-transform", open && "rotate-180")}
+          />
+        </button>
+        {open ? (
+          <div
+            role="listbox"
+            className="absolute left-0 z-30 mt-1 w-72 max-w-[85vw] overflow-hidden rounded-lg border border-amber-200 bg-white shadow-lg dark:border-amber-900/70 dark:bg-zinc-900"
+          >
+            {hooks.map((hook, i) => (
+              <button
+                key={hook.id}
+                type="button"
+                role="option"
+                aria-selected={false}
+                disabled={busy}
+                onClick={() => {
+                  setOpen(false);
+                  onPick(hook);
+                }}
+                title={hook.why || "Send this as the next consult question"}
+                className="flex w-full items-center gap-2 border-b border-amber-100 px-3 py-2 text-left transition last:border-b-0 hover:bg-amber-50 disabled:opacity-50 dark:border-zinc-800 dark:hover:bg-amber-950/40"
+              >
+                <span className="flex h-4 w-4 shrink-0 items-center justify-center rounded-full bg-amber-100 text-[9px] font-semibold text-amber-800 dark:bg-amber-900/60 dark:text-amber-100">
+                  {i + 1}
+                </span>
+                <span className="text-[12px] font-medium text-zinc-800 dark:text-zinc-100">
+                  {hook.label}
+                </span>
+              </button>
+            ))}
+          </div>
+        ) : null}
+      </div>
+    </div>
+  );
 }
 
 function shouldReplaceGroundingTitle(title: string) {
@@ -710,7 +810,7 @@ export default function Home() {
             content: data.answer,
             confidence: data.confidence,
             intent: data.intent,
-            hooks: (data.hooks ?? []).slice(0, 3),
+            hooks: (data.hooks ?? []).slice(0, 6),
             angles: data.angles ?? [],
             briefs: {},
           },
@@ -881,31 +981,12 @@ export default function Home() {
         </div>
 
         {askNext.length > 0 ? (
-          <div className="space-y-1">
-            <p className="flex items-center gap-1 text-[10px] font-semibold uppercase tracking-wide text-zinc-500">
-              <MessageCircle className="h-3 w-3" />
-              Ask next
-              {msg.intent?.userJob ? (
-                <span className="font-normal normal-case tracking-normal text-zinc-400">
-                  · {msg.intent.userJob}
-                </span>
-              ) : null}
-            </p>
-            <div className="flex flex-wrap gap-1.5">
-              {askNext.slice(0, 3).map((hook) => (
-                <button
-                  key={hook.id}
-                  type="button"
-                  disabled={busy}
-                  onClick={() => onHookClick(msg, hook)}
-                  className="inline-flex items-center gap-1 rounded-full border border-amber-200 bg-amber-50 px-2.5 py-1 text-[11px] font-medium text-amber-950 transition hover:border-amber-300 hover:bg-amber-100 disabled:opacity-50 dark:border-amber-900/70 dark:bg-amber-950/40 dark:text-amber-100 dark:hover:bg-amber-950/70"
-                  title={hook.why || "Send this as the next consult question"}
-                >
-                  {hook.label}
-                </button>
-              ))}
-            </div>
-          </div>
+          <AskNextMenu
+            hooks={askNext.slice(0, 6)}
+            userJob={msg.intent?.userJob}
+            busy={busy}
+            onPick={(hook) => onHookClick(msg, hook)}
+          />
         ) : null}
 
       </div>
