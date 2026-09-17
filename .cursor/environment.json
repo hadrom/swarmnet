@@ -1,0 +1,17 @@
+{
+  "name": "two-lane-llm-demo",
+  "install": "npm ci",
+  "terminals": [
+    {
+      "name": "next-dev",
+      "command": "npm run dev",
+      "description": "Next.js dev server (Turbopack) on http://127.0.0.1:43127. Runs in mock mode unless GEMINI_API_KEY is set."
+    }
+  ],
+  "ports": [
+    {
+      "name": "web",
+      "port": 43127
+    }
+  ]
+}
