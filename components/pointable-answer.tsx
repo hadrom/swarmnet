@@ -23,9 +23,9 @@ type Props = {
   disabled?: boolean;
   className?: string;
   onAsk: (question: string) => void;
-  /** Phrases already answered under Grounding NOTES — underlined + clickable. */
+  /** Phrases already answered under Shared memory NOTES — underlined + clickable. */
   described?: DescribedPhrase[];
-  /** Open Grounding and jump to this note id. */
+  /** Open Shared memory and jump to this note id. */
   onOpenNote?: (noteId: string) => void;
 };
 
@@ -164,7 +164,7 @@ function renderMarkedText(
         type="button"
         data-ask-described=""
         data-note-id={hit.noteId}
-        title="Open description in Grounding NOTES"
+        title="Open description in Shared memory NOTES"
         className={MARK_CLASS}
         onMouseDown={(e) => e.stopPropagation()}
         onClick={(e) => {
@@ -226,7 +226,7 @@ function wrapDescribedInDom(root: HTMLElement, described: DescribedPhrase[]) {
       const mark = document.createElement("span");
       mark.dataset.askDescribed = "true";
       mark.dataset.noteId = hit.noteId;
-      mark.title = "Open description in Grounding NOTES";
+      mark.title = "Open description in Shared memory NOTES";
       mark.className =
         "cursor-pointer underline decoration-sky-600 decoration-2 underline-offset-[3px] hover:decoration-sky-800 dark:decoration-sky-400 dark:hover:decoration-sky-200";
       mark.textContent = value.slice(hit.start, hit.end);

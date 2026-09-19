@@ -5,6 +5,7 @@ import {
   ArrowUp,
   BookOpen,
   ChevronDown,
+  List,
   Loader2,
   MessageCircle,
   PanelRight,
@@ -16,6 +17,7 @@ import { Badge } from "@/components/ui/badge";
 import { Button } from "@/components/ui/button";
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { CanvasEditor } from "@/components/canvas-editor";
+import { ContentsIndex } from "@/components/contents-index";
 import { ChatSidebar, ChatSidebarToggle } from "@/components/chat-sidebar";
 import {
   PointableAnswer,
@@ -33,6 +35,7 @@ import {
   type ChatSnapshot,
   type SideKind,
 } from "@/lib/chat-history";
+import { buildChatContents, buildJournalContents } from "@/lib/thread-contents";
 import { pickConsultStarters } from "@/lib/prompts";
 import type {
   CanvasDoc,
@@ -82,7 +85,7 @@ function briefKeyFor(hook?: Hook) {
 }
 
 /** Precompute the Main deep read once the user has dwelled on a consult answer this long. */
-const DWELL_PREFETCH_MS = 5000;
+const DWELL_PREFETCH_MS = 2000;
 
 /** Generic high-signal follow-ups used to backfill to a full 6 when the model returns fewer. */
 const FALLBACK_ASK_NEXT: Hook[] = [
@@ -214,7 +217,7 @@ function AskNextMenu({
 function shouldReplaceGroundingTitle(title: string) {
   const t = title.replace(/\s+/g, " ").trim();
   if (!t) return true;
-  if (/^(grounding|working note|untitled)$/i.test(t)) return true;
+  if (/^(grounding|shared memory|working note|untitled)$/i.test(t)) return true;
   if (t.length > 28) return true;
   if (/\?$/.test(t)) return true;
   if (/\b(?:is|are|was|were)\b/i.test(t)) return true;
@@ -326,6 +329,14 @@ export default function Home() {
   const [activeChatId, setActiveChatId] = useState("");
   const [chats, setChats] = useState<ChatSnapshot[]>([]);
   const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [memoryView, setMemoryView] = useState<"journal" | "contents">(
+    "journal",
+  );
+  const [conceptFocus, setConceptFocus] = useState<{
+    phrase: string;
+    nonce: number;
+  } | null>(null);
+  const [consultView, setConsultView] = useState<"chat" | "contents">("chat");
 
   const bottomRef = useRef<HTMLDivElement>(null);
   const composerRef = useRef<HTMLTextAreaElement>(null);
@@ -481,6 +492,94 @@ export default function Home() {
     () => (canvas ? canvasJournalStatus(canvas) : null),
     [canvas],
   );
+  const journalContents = useMemo(
+    () => (canvas ? buildJournalContents(canvas.bodyHtml) : []),
+    [canvas],
+  );
+  const chatContentsLocal = useMemo(
+    () => buildChatContents(messages),
+    [messages],
+  );
+  const [contentsTitleOverrides, setContentsTitleOverrides] = useState<
+    Record<string, string>
+  >({});
+  const contentsTitleCacheRef = useRef<Record<string, string>>({});
+
+  const chatContents = useMemo(
+    () =>
+      chatContentsLocal.map((s) => ({
+        ...s,
+        title: contentsTitleOverrides[s.id] ?? s.title,
+      })),
+    [chatContentsLocal, contentsTitleOverrides],
+  );
+  const journalIndex = useMemo(
+    () =>
+      journalContents.map((s) => ({
+        ...s,
+        title: contentsTitleOverrides[s.id] ?? s.title,
+      })),
+    [journalContents, contentsTitleOverrides],
+  );
+
+  // When Contents opens, refine microtitles via /api/title (cached per section).
+  useEffect(() => {
+    const openChat = consultView === "contents";
+    const openJournal = memoryView === "contents";
+    if (!openChat && !openJournal) return;
+    const sections = openChat ? chatContentsLocal : journalContents;
+    let cancelled = false;
+
+    async function enrich() {
+      const pending = sections.filter(
+        (s) =>
+          !contentsTitleCacheRef.current[s.id] &&
+          (s.seedAnswer.trim().length >= 24 || s.seedQuestion.trim().length >= 12),
+      );
+      await Promise.all(
+        pending.slice(0, 8).map(async (s) => {
+          try {
+            const res = await fetch("/api/title", {
+              method: "POST",
+              headers: { "Content-Type": "application/json" },
+              body: JSON.stringify({
+                question: s.seedQuestion || s.title,
+                answer: s.seedAnswer,
+              }),
+            });
+            if (!res.ok || cancelled) return;
+            const data = (await res.json()) as { title?: string };
+            const title = clampTabTitle(String(data.title ?? ""), s.title);
+            if (!title || cancelled) return;
+            contentsTitleCacheRef.current[s.id] = title;
+            setContentsTitleOverrides((prev) =>
+              prev[s.id] === title ? prev : { ...prev, [s.id]: title },
+            );
+          } catch {
+            // keep local microtitle
+          }
+        }),
+      );
+    }
+
+    void enrich();
+    return () => {
+      cancelled = true;
+    };
+  }, [consultView, memoryView, chatContentsLocal, journalContents]);
+
+  function jumpToPathMessage(messageId: string) {
+    setConsultView("chat");
+    window.setTimeout(() => {
+      const el = document.querySelector(
+        `[data-message-id="${CSS.escape(messageId)}"]`,
+      );
+      if (!el) return;
+      el.scrollIntoView({ behavior: "smooth", block: "center" });
+      el.classList.add("ask-note-flash");
+      window.setTimeout(() => el.classList.remove("ask-note-flash"), 1600);
+    }, 60);
+  }
   const chatMaxWidth =
     columnCount >= 3 ? "max-w-md" : columnCount === 2 ? "max-w-lg" : "max-w-2xl";
 
@@ -528,6 +627,7 @@ export default function Home() {
       titleLocked: false,
     };
     applyChatToUi(draft, uiSetters);
+    resetConsultView();
     setBusy(false);
     saveChatHistory({ activeId: draft.id, chats: next });
     setStarters(pickConsultStarters(3));
@@ -538,6 +638,7 @@ export default function Home() {
 
   function selectChat(id: string) {
     if (busy || id === activeChatId) return;
+    cancelPrefetch();
     const next = flushCurrentChat();
     const chat = next.find((c) => c.id === id);
     if (!chat) return;
@@ -549,6 +650,7 @@ export default function Home() {
       titleLocked: Boolean(chat.titleLocked),
     };
     applyChatToUi(chat, uiSetters);
+    resetConsultView();
     setBusy(false);
     saveChatHistory({ activeId: chat.id, chats: next });
     if (typeof window !== "undefined" && window.innerWidth < 1024) {
@@ -571,6 +673,7 @@ export default function Home() {
           titleLocked: Boolean(fallback.titleLocked),
         };
         applyChatToUi(fallback, uiSetters);
+        resetConsultView();
         saveChatHistory({ activeId: fallback.id, chats: next });
       } else {
         const draft = emptyChat();
@@ -583,6 +686,7 @@ export default function Home() {
           titleLocked: false,
         };
         applyChatToUi(draft, uiSetters);
+        resetConsultView();
         setStarters(pickConsultStarters(3));
         saveChatHistory({ activeId: draft.id, chats: next });
       }
@@ -600,6 +704,11 @@ export default function Home() {
   function hideGrounding() {
     if (sideKind === "grounding") setGroundingEditing(false);
     setSideKind(null);
+    setMemoryView("journal");
+  }
+
+  function resetConsultView() {
+    setConsultView("chat");
   }
 
 
@@ -673,7 +782,7 @@ export default function Home() {
       : titleFromMessages(messages);
     const titleSeed =
       chatTitle !== "New chat" ? chatTitle : seedText;
-    const desiredTitle = clampTabTitle(titleSeed, "Grounding");
+    const desiredTitle = clampTabTitle(titleSeed, "Shared memory");
     const next = canvas
       ? shouldReplaceGroundingTitle(canvas.title)
         ? { ...canvas, title: desiredTitle, updatedAt: Date.now() }
@@ -709,7 +818,7 @@ export default function Home() {
     const base =
       canvas ??
       seedWorkingCanvas({
-        title: clampTabTitle(titleSeed, "Grounding"),
+        title: clampTabTitle(titleSeed, "Shared memory"),
         seedAnswer: seedText,
       });
     const next = promoteBriefIntoCanvas(base, activeBrief.brief, mode);
@@ -780,7 +889,7 @@ export default function Home() {
       const base =
         canvasRef.current ??
         seedWorkingCanvas({
-          title: clampTabTitle(chatTitle, "Grounding"),
+          title: clampTabTitle(chatTitle, "Shared memory"),
         });
       // Short answer only — do not append to the consult spine.
       const data = await sendConsult(q, messages);
@@ -831,7 +940,7 @@ export default function Home() {
           body: JSON.stringify({ message: question, doc: canvas, history }),
         });
         const data = await res.json();
-        if (!res.ok) throw new Error(data.error || "Grounding edit failed");
+        if (!res.ok) throw new Error(data.error || "Shared memory edit failed");
         if (data.doc) {
           setCanvas(data.doc);
           setCanvasEpoch((n) => n + 1);
@@ -842,7 +951,7 @@ export default function Home() {
             id: uid(),
             role: "assistant",
             kind: "grounding",
-            content: String(data.reply ?? "Updated grounding."),
+            content: String(data.reply ?? "Updated shared memory."),
             hooks: [],
             angles: [],
             briefs: {},
@@ -920,7 +1029,14 @@ export default function Home() {
       prefetchRef.current.controller.abort(); // different target → take over
       prefetchRef.current = null;
     }
-    const title = hook?.label ?? "Main";
+    const idx = messages.findIndex((m) => m.id === msg.id);
+    const prior = idx >= 0 ? messages.slice(0, idx + 1) : [msg];
+    const priorUser = [...prior].reverse().find((m) => m.role === "user");
+    const question = priorUser?.content ?? msg.content;
+    // Condensed topic title per deep read (not a generic "Main").
+    const title = hook?.label
+      ? clampTabTitle(hook.label, hook.label)
+      : titleFromExchange(question, msg.content, "Deep read");
     const controller = new AbortController();
     prefetchRef.current = { id: msg.id, key, controller };
     setStreamingBrief({
@@ -930,12 +1046,8 @@ export default function Home() {
       hookId: hook?.id,
       markdown: "",
     });
-    console.info("[read-deeper] compute start", { id: msg.id, key });
+    console.info("[read-deeper] compute start", { id: msg.id, key, title });
     try {
-      const idx = messages.findIndex((m) => m.id === msg.id);
-      const prior = idx >= 0 ? messages.slice(0, idx + 1) : [msg];
-      const priorUser = [...prior].reverse().find((m) => m.role === "user");
-      const question = priorUser?.content ?? msg.content;
       const history = prior.map((m) => ({ role: m.role, content: m.content }));
       const res = await fetch("/api/brief", {
         method: "POST",
@@ -1046,10 +1158,13 @@ export default function Home() {
   function cancelPrefetch() {
     prefetchRef.current?.controller.abort();
     prefetchRef.current = null;
+    setStreamingBrief(null);
+    setOpenBrief(null);
   }
 
   // After the user dwells on a fresh consult answer for DWELL_PREFETCH_MS, precompute
-  // its Main deep read in the background so opening "Read deeper" is instant.
+  // its Main deep read in the background (tokens buffer quietly; pane only on open).
+  // New consult prompts / new chat call cancelPrefetch() so the old stream dies.
   useEffect(() => {
     if (busy) return;
     const last = messages[messages.length - 1];
@@ -1114,7 +1229,7 @@ export default function Home() {
       return (
         <div className="flex max-w-[95%] flex-wrap items-center gap-1.5">
           <Badge className="border-sky-300 bg-sky-50 text-sky-950 dark:border-sky-800 dark:bg-sky-950/50 dark:text-sky-100">
-            grounding edit
+            shared memory edit
           </Badge>
           <button
             type="button"
@@ -1130,7 +1245,7 @@ export default function Home() {
             ) : (
               <>
                 <PanelRight className="h-3 w-3" />
-                Open grounding
+                Open shared memory
               </>
             )}
           </button>
@@ -1178,10 +1293,10 @@ export default function Home() {
                 ? "border-sky-700 bg-sky-700 text-white"
                 : "border-sky-800/70 bg-sky-50 text-sky-950 hover:bg-sky-100 dark:border-sky-500 dark:bg-sky-950/40 dark:text-sky-100",
             )}
-            title="Open grounding doc seeded from this answer"
+            title="Open shared memory seeded from this answer"
           >
             <PanelRight className="h-3 w-3" />
-            {canvas ? "Open grounding" : "Grounding"}
+            {canvas ? "Open shared memory" : "Shared memory"}
           </button>
         </div>
 
@@ -1239,14 +1354,14 @@ export default function Home() {
               </h1>
               {editingGrounding ? (
                 <Badge className="border-sky-400 bg-sky-700 text-white dark:border-sky-600 dark:bg-sky-600">
-                  editing grounding
+                  editing shared memory
                 </Badge>
               ) : null}
             </div>
             <p className="mt-0.5 truncate text-xs text-zinc-500">
               {editingGrounding
-                ? "Composer targets Grounding — turn off Edit with chat to consult again."
-                : "Consult for short answers. Ask next to steer. Read deeper for variations. Grounding is ground truth."}
+                ? "Composer targets Shared memory — turn off Edit with chat to consult again."
+                : "Consult for short answers. Ask next to steer. Read deeper for variations. Shared memory is ground truth."}
             </p>
             </div>
           </div>
@@ -1267,10 +1382,10 @@ export default function Home() {
                 variant="outline"
                 size="sm"
                 onClick={() => openGrounding()}
-                title="Reopen the grounding document"
+                title="Reopen the shared memory document"
               >
                 <PanelRight className="h-3.5 w-3.5" />
-                Grounding
+                Shared memory
               </Button>
             ) : null}
             <Button
@@ -1316,7 +1431,7 @@ export default function Home() {
                   ) : null}
                 </h2>
                 <p className="text-xs text-zinc-500">
-                  Deep read left of consult — Half / Full append into Grounding
+                  Deep read left of consult — Summary / Full append into Shared memory
                 </p>
               </div>
               <Button
@@ -1349,18 +1464,18 @@ export default function Home() {
                 <div className="space-y-4">
                   <div className="flex flex-wrap gap-1.5 rounded-xl border border-sky-200 bg-sky-50/80 p-2 dark:border-sky-900 dark:bg-sky-950/30">
                     <p className="w-full text-[11px] font-medium text-sky-950 dark:text-sky-100">
-                      Add to Grounding
+                      Add to Shared memory
                     </p>
                     <Button
                       type="button"
                       size="sm"
                       variant="outline"
                       disabled={busy}
-                      onClick={() => promoteBrief("half")}
+                      onClick={() => promoteBrief("summary")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append a short excerpt from this elaborate"
+                      title="Append a short summary excerpt from this elaborate"
                     >
-                      Half
+                      Summary
                     </Button>
                     <Button
                       type="button"
@@ -1369,7 +1484,7 @@ export default function Home() {
                       disabled={busy}
                       onClick={() => promoteBrief("full")}
                       className="border-sky-300 bg-white text-sky-950 hover:bg-sky-100 dark:border-sky-800 dark:bg-sky-950 dark:text-sky-100"
-                      title="Append the entire elaborate reply into Grounding"
+                      title="Append the entire elaborate reply into Shared memory"
                     >
                       Full
                     </Button>
@@ -1394,8 +1509,60 @@ export default function Home() {
               "border-b border-zinc-200 lg:border-b-0 lg:border-r dark:border-zinc-800",
           )}
         >
-            <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-            {messages.length === 0 ? (
+          <div className="flex shrink-0 items-center justify-between gap-2 border-b border-zinc-200 px-4 py-2.5 dark:border-zinc-800">
+            <div className="min-w-0">
+              <h2 className="truncate text-sm font-semibold">
+                {consultView === "contents" ? "Contents" : "Consult"}
+              </h2>
+              <p className="text-xs text-zinc-500">
+                {consultView === "contents"
+                  ? "Topics across this thread — one line can span several turns"
+                  : "Short answers on the spine · Ask next · Read deeper"}
+              </p>
+            </div>
+            <div className="inline-flex shrink-0 rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
+              <button
+                type="button"
+                onClick={() => setConsultView("chat")}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                  consultView === "chat"
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+                )}
+              >
+                <MessageCircle className="h-3 w-3" />
+                Chat
+              </button>
+              <button
+                type="button"
+                onClick={() => setConsultView("contents")}
+                className={cn(
+                  "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                  consultView === "contents"
+                    ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                    : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+                )}
+                title="Table of contents for this consult thread"
+              >
+                <List className="h-3 w-3" />
+                Contents
+              </button>
+            </div>
+          </div>
+          <ScrollArea className="min-h-0 flex-1 px-4 py-4">
+            {consultView === "contents" ? (
+              <div className={cn("mx-auto", chatMaxWidth)}>
+                <ContentsIndex
+                  heading="Thread contents"
+                  entries={chatContents}
+                  emptyMessage="No consult turns yet. Ask something to build the index."
+                  onSelect={(entry) => {
+                    if (entry.messageId) jumpToPathMessage(entry.messageId);
+                  }}
+                />
+              </div>
+            ) : messages.length === 0 ? (
               <div
                 className={cn("mx-auto flex flex-col gap-4 pt-10", chatMaxWidth)}
               >
@@ -1405,7 +1572,7 @@ export default function Home() {
                   </h2>
                   <p className="mt-1 text-sm text-zinc-500">
                     Short answers stay on this spine — chips ask follow-ups.
-                    Ask next steers consult. Read deeper opens variations. Grounding is a living journal
+                    Ask next steers consult. Read deeper opens variations. Shared memory is a living journal
                     that grows as you talk — agreements, clashes, and corrections.
                   </p>
                 </div>
@@ -1432,6 +1599,7 @@ export default function Home() {
                   return (
                     <div
                       key={msg.id}
+                      data-message-id={msg.id}
                       className={cn(
                         "flex flex-col gap-2",
                         msg.role === "user" ? "items-end" : "items-start",
@@ -1501,7 +1669,7 @@ export default function Home() {
                     Edit with chat · armed
                   </p>
                   <p className="truncate text-[11px] text-sky-100/90">
-                    Your next message extends the Grounding journal — not a consult answer
+                    Your next message extends the Shared memory journal — not a consult answer
                   </p>
                 </div>
                 <Button
@@ -1521,7 +1689,7 @@ export default function Home() {
                 <PanelRight className="h-3.5 w-3.5 shrink-0 text-sky-800 dark:text-sky-200" />
                 <div className="min-w-0 flex-1">
                   <p className="truncate text-xs font-semibold text-sky-950 dark:text-sky-100">
-                    Grounding open · reading
+                    Shared memory open · reading
                   </p>
                   <p className="truncate text-[11px] text-sky-800/80 dark:text-sky-200/80">
                     Chat still consults — arm Edit with chat to extend the journal
@@ -1559,7 +1727,7 @@ export default function Home() {
                 rows={2}
                 placeholder={
                   editingGrounding
-                    ? "Edit grounding — e.g. lock this as a Decision…"
+                    ? "Edit shared memory — e.g. lock this as a Decision…"
                     : "Ask a consult question…"
                 }
                 className={cn(
@@ -1596,17 +1764,47 @@ export default function Home() {
             >
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-semibold">
-                  {editingGrounding ? "Grounding · chat editing" : "Grounding"}
+                  {editingGrounding ? "Shared memory · chat editing" : "Shared memory"}
                 </h2>
                 <p className="text-xs text-zinc-500">
                   {editingGrounding
                     ? "Composer is locked onto this doc until you disarm"
-                    : groundingStatus
-                      ? `${groundingStatus.entries} ${groundingStatus.entries === 1 ? "entry" : "entries"} · journal grows as you talk`
-                      : "Open journal — edit here; arm chat to extend the trail"}
+                    : memoryView === "contents"
+                      ? "Topics across the journal — related entries share one line"
+                      : groundingStatus
+                        ? `${groundingStatus.entries} ${groundingStatus.entries === 1 ? "entry" : "entries"} · journal grows as you talk`
+                        : "Open journal — edit here; arm chat to extend the trail"}
                 </p>
               </div>
               <div className="flex shrink-0 flex-wrap items-center justify-end gap-1.5">
+                <div className="mr-1 inline-flex rounded-lg border border-zinc-200 bg-zinc-50 p-0.5 dark:border-zinc-700 dark:bg-zinc-900">
+                  <button
+                    type="button"
+                    onClick={() => setMemoryView("journal")}
+                    className={cn(
+                      "rounded-md px-2 py-1 text-[11px] font-medium transition",
+                      memoryView === "journal"
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+                    )}
+                  >
+                    Journal
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setMemoryView("contents")}
+                    className={cn(
+                      "inline-flex items-center gap-1 rounded-md px-2 py-1 text-[11px] font-medium transition",
+                      memoryView === "contents"
+                        ? "bg-white text-zinc-900 shadow-sm dark:bg-zinc-800 dark:text-zinc-50"
+                        : "text-zinc-500 hover:text-zinc-800 dark:hover:text-zinc-200",
+                    )}
+                    title="Table of contents for this journal"
+                  >
+                    <List className="h-3 w-3" />
+                    Contents
+                  </button>
+                </div>
                 <Button
                   type="button"
                   size="sm"
@@ -1626,7 +1824,7 @@ export default function Home() {
                   variant="ghost"
                   size="sm"
                   onClick={hideGrounding}
-                  title="Hide grounding"
+                  title="Hide shared memory"
                 >
                   <X className="h-4 w-4" />
                   <span className="ml-1 hidden sm:inline">Close</span>
@@ -1634,13 +1832,31 @@ export default function Home() {
               </div>
             </div>
             <ScrollArea className="min-h-0 flex-1 px-4 py-4">
-              <CanvasEditor
-                key={canvasEpoch}
-                doc={canvas}
-                disabled={busy}
-                onChange={setCanvas}
-                onAsk={(q) => void askAboutIntoNotes(q)}
-              />
+              {memoryView === "contents" ? (
+                <ContentsIndex
+                  heading="Journal contents"
+                  entries={journalIndex}
+                  emptyMessage="Not enough journal text yet. Keep talking in Shared memory, then open Contents again."
+                  onSelect={(entry) => {
+                    if (!entry.findText) return;
+                    setMemoryView("journal");
+                    setConceptFocus((prev) => ({
+                      phrase: entry.findText!,
+                      nonce: (prev?.nonce ?? 0) + 1,
+                    }));
+                  }}
+                />
+              ) : (
+                <CanvasEditor
+                  key={canvasEpoch}
+                  doc={canvas}
+                  disabled={busy}
+                  onChange={setCanvas}
+                  onAsk={(q) => void askAboutIntoNotes(q)}
+                  focusPhrase={conceptFocus?.phrase}
+                  focusNonce={conceptFocus?.nonce}
+                />
+              )}
             </ScrollArea>
           </section>
         ) : null}

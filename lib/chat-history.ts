@@ -126,7 +126,7 @@ export function loadChatHistory(): ChatHistoryStore | null {
         canvas: c.canvas
           ? {
               ...c.canvas,
-              title: clampTabTitle(c.canvas.title || "", "Grounding"),
+              title: clampTabTitle(c.canvas.title || "", "Shared memory"),
             }
           : null,
         groundingEditing: Boolean(c.groundingEditing),

@@ -4,7 +4,7 @@ Local prototype for cofounder demos. The core mix is:
 
 - **Consult** — short answers on a clean spine, steered by **Ask next** chips  
 - **Depth** — disposable deep read on one answer, switched by **Variations**  
-- **Grounding** — a living journal that grows as you talk (agreements, clashes, corrections)
+- **Shared memory** — a living journal that grows as you talk (agreements, clashes, corrections)
 
 Gemini is a disposable stand-in for an on-prem model.
 
@@ -16,41 +16,41 @@ npm install
 npm run dev
 ```
 
-Open [http://127.0.0.1:43127](http://127.0.0.1:43127).
+Open [http://127.0.0.1:43128](http://127.0.0.1:43128).
 
 ## Flow
 
 ### Consult
 
 - Short answers on the main spine
-- **Ask next** — exactly **3** follow-up chips, ranked by inferred intent from the question + short answer (navigate without typing)
-- Click a word or drag-select a phrase, confirm **Ask about this** — the answer lands as a numbered item under **NOTES** in Grounding. Described words stay underlined; click one to jump back to its NOTES entry. The NOTES block always stays at the bottom of Grounding, even after journal edits
+- **Ask next** — follow-up suggestions, ranked by inferred intent from the question + short answer (navigate without typing)
+- Click a word or drag-select a phrase, confirm **Ask about this** — the answer lands as a numbered item under **NOTES** in Shared memory. Described words stay underlined; click one to jump back to its NOTES entry. The NOTES block always stays at the bottom of Shared memory, even after journal edits
 - Three suggested topics are **randomized on each page load** (any walk of life)
 - **Read deeper** opens **Depth** to the **left of consult**; **Variations** reweight that same deep read (Main + facet tabs — not chat chips)
-- **Grounding** stays on the **right** and can stay open while you read deeper
+- **Shared memory** stays on the **right** and can stay open while you read deeper
 
-### Depth → Grounding
+### Depth → Shared memory
 
 Depth replies are deeper reads, not source of truth. From an open depth pane:
 
-- **Half** — append a short excerpt from the start of the elaborate  
+- **Summary** — append a short lead-in excerpt from the start of the elaborate  
 - **Full** — append the entire elaborate reply (nothing truncated)  
 
-### Grounding (journal lane)
+### Shared memory (journal lane)
 
-1. Click **Grounding** on an answer (or reopen from the header) — opens for **reading**; chat still consults
+1. Click **Shared memory** on an answer (or reopen from the header) — opens for **reading**; chat still consults
 2. Doc seeds as an open journal (no fixed sections). It grows like an RPG trail
 3. Edit with the toolbar yourself, or click **Edit with chat** to arm the composer
 4. While armed, sky chrome shows; turns **append** to the journal (agreements, disagreements, and “you’re wrong because…” live in the trail itself — not special subtitles)
 5. Highlight journal text (above **NOTES**) or click a word → **Ask about this** — same as consult/Depth; answers append as numbered NOTES items (asks inside NOTES are ignored)
-6. **Back to consult** / **Stop editing** disarms — Grounding can stay open while you ask normal questions
+6. **Back to consult** / **Stop editing** disarms — Shared memory can stay open while you ask normal questions
 7. Status chrome shows entry count
 8. Hide anytime — the journal persists with the chat until you start a new one
 
 ### Chat history
 
-- Conversations auto-save to `localStorage`; sidebar/grounding titles are short contextual recaps from the Q&A (model-written when available), not the first words of the prompt
-- Left sidebar lists past chats — click to recall (consult + grounding included)
+- Conversations auto-save to `localStorage`; sidebar/shared memory titles are short contextual recaps from the Q&A (model-written when available), not the first words of the prompt
+- Left sidebar lists past chats — click to recall (consult + shared memory included)
 - **New chat** archives the current thread and opens a blank one; delete from the sidebar when done
 - Survives tab close (unlike the old single-session `sessionStorage` slot)
 
@@ -58,7 +58,7 @@ Depth replies are deeper reads, not source of truth. From an open depth pane:
 
 | Job | Model | Notes |
 |---|---|---|
-| Lite / grounding turns | `gemini-3.5-flash-lite` | High free-tier volume |
+| Lite / shared memory turns | `gemini-3.5-flash-lite` | High free-tier volume |
 | Brief | `gemini-3.8-flash` | Use sparingly in demos |
 | 429 fallback | `gemma-4-31b-it` | High RPD, tight TPM |
 | Offline / errors | in-memory mock | Same JSON shapes |
@@ -67,11 +67,11 @@ Depth replies are deeper reads, not source of truth. From an open depth pane:
 
 1. Refresh — note three new starter topics.
 2. Click a starter (and maybe a chip follow-up).
-3. **Read deeper** — switch **Variations**; **Half → Grounding**.
+3. **Read deeper** — switch **Variations**; **Summary → Shared memory**.
 4. Arm **Edit with chat**, then disagree or lock something — watch the journal grow.
-5. Disarm and ask a normal consult question — Grounding stays visible.
+5. Disarm and ask a normal consult question — Shared memory stays visible.
 6. **New chat** — current thread stays in the sidebar; open another topic.
-7. Switch chats from the sidebar to prove recall (grounding comes back too).
+7. Switch chats from the sidebar to prove recall (shared memory comes back too).
 
 ## Swap to on-prem later
 

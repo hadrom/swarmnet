@@ -154,15 +154,15 @@ export function mockCanvasEdit(
 ): CanvasEditResponse {
   const topic = message.replace(/\s+/g, " ").trim().slice(0, 160);
   const empty = !doc.bodyText.trim();
-  if (empty || /draft|write|start|create|journal|grounding|canvas/i.test(message)) {
+  if (empty || /draft|write|start|create|journal|grounding|shared memory|canvas/i.test(message)) {
     const title =
       !doc.title ||
-      /untitled|working note|grounding journal|^grounding$/i.test(doc.title)
-        ? titleFromExchange(topic, undefined, "Grounding")
+      /untitled|working note|grounding journal|shared memory|^grounding$/i.test(doc.title)
+        ? titleFromExchange(topic, undefined, "Shared memory")
         : doc.title;
     const html = `<p><em>Journal opened.</em></p><hr/><p>${topic || "Conversation started."}</p>`;
     return {
-      reply: `Opened the grounding journal as “${title}”. Keep talking and I will extend the trail.`,
+      reply: `Opened the shared memory journal as “${title}”. Keep talking and I will extend the trail.`,
       ops: [
         { op: "setTitle", title },
         { op: "setBodyHtml", html },
@@ -173,7 +173,7 @@ export function mockCanvasEdit(
     const title = titleFromExchange(
       topic.replace(/^(please\s+)?(set\s+)?(the\s+)?title\s*(to|:)?\s*/i, ""),
       undefined,
-      "Grounding",
+      "Shared memory",
     );
     return {
       reply: `Renamed the journal to “${title}”.`,
@@ -181,7 +181,7 @@ export function mockCanvasEdit(
     };
   }
   return {
-    reply: `Appended that to the grounding journal. Disagree, correct me, or keep going.`,
+    reply: `Appended that to the shared memory journal. Disagree, correct me, or keep going.`,
     ops: [
       {
         op: "appendHtml",

@@ -15,7 +15,7 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: "Unweaver chunked streaming variant",
   description:
-    "Consult (short answers + on-demand elaborate) and Grounding (writable ground-truth doc) interaction prototype.",
+    "Consult (short answers + on-demand elaborate) and Shared memory (writable ground-truth doc) interaction prototype.",
 };
 
 export default function RootLayout({

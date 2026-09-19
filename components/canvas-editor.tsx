@@ -20,6 +20,10 @@ type Props = {
   disabled?: boolean;
   /** Ask about a selection in the journal body (not NOTES). Writes into NOTES. */
   onAsk?: (question: string) => void;
+  /** When set, scroll to and briefly highlight the first match in the journal. */
+  focusPhrase?: string | null;
+  /** Bumped when the same phrase should be focused again. */
+  focusNonce?: number;
 };
 
 type AskChip = {
@@ -120,7 +124,14 @@ function chipPosition(range: Range, root: HTMLElement) {
   };
 }
 
-export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
+export function CanvasEditor({
+  doc,
+  onChange,
+  disabled,
+  onAsk,
+  focusPhrase,
+  focusNonce = 0,
+}: Props) {
   const bodyRef = useRef<HTMLDivElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
   /** Last HTML we pushed to React from local typing / toolbar. */
@@ -150,6 +161,63 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
     }
     lastLocalHtml.current = null;
   }, [doc.bodyHtml, doc.updatedAt]);
+
+  // Concept-map jump: find phrase, scroll into view, flash highlight.
+  useEffect(() => {
+    const root = bodyRef.current;
+    const needle = (focusPhrase || "").trim();
+    if (!root || !needle) return;
+
+    // Clear previous flash marks
+    root.querySelectorAll("mark[data-concept-flash]").forEach((el) => {
+      const parent = el.parentNode;
+      if (!parent) return;
+      while (el.firstChild) parent.insertBefore(el.firstChild, el);
+      parent.removeChild(el);
+      parent.normalize();
+    });
+
+    const walker = document.createTreeWalker(root, NodeFilter.SHOW_TEXT);
+    const lowerNeedle = needle.toLowerCase();
+    let found: { node: Text; start: number; end: number } | null = null;
+    let node: Node | null;
+    while ((node = walker.nextNode())) {
+      const text = node.textContent || "";
+      const idx = text.toLowerCase().indexOf(lowerNeedle);
+      if (idx >= 0) {
+        found = { node: node as Text, start: idx, end: idx + needle.length };
+        break;
+      }
+    }
+    if (!found) return;
+
+    const range = document.createRange();
+    range.setStart(found.node, found.start);
+    range.setEnd(found.node, found.end);
+    const mark = document.createElement("mark");
+    mark.setAttribute("data-concept-flash", "1");
+    mark.style.background = "rgba(14, 165, 233, 0.35)";
+    mark.style.borderRadius = "2px";
+    try {
+      range.surroundContents(mark);
+    } catch {
+      // Partial element boundaries — still scroll the text node parent.
+      (found.node.parentElement as HTMLElement | null)?.scrollIntoView({
+        behavior: "smooth",
+        block: "center",
+      });
+      return;
+    }
+    mark.scrollIntoView({ behavior: "smooth", block: "center" });
+    const t = window.setTimeout(() => {
+      if (!mark.parentNode) return;
+      const parent = mark.parentNode;
+      while (mark.firstChild) parent.insertBefore(mark.firstChild, mark);
+      parent.removeChild(mark);
+      parent.normalize();
+    }, 2200);
+    return () => window.clearTimeout(t);
+  }, [focusPhrase, focusNonce]);
 
   const showChipForRange = useCallback(
     (range: Range, phrase: string) => {
@@ -299,7 +367,7 @@ export function CanvasEditor({ doc, onChange, disabled, onAsk }: Props) {
             updatedAt: Date.now(),
           })
         }
-        placeholder="Grounding title"
+        placeholder="Shared memory title"
         className="w-full shrink-0 border-0 border-b border-zinc-200 bg-transparent px-0 py-2 text-lg font-semibold tracking-tight text-zinc-900 outline-none placeholder:text-zinc-400 dark:border-zinc-800 dark:text-zinc-50"
       />
 

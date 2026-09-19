@@ -156,8 +156,8 @@ export function pickConsultStarters(count = 3): string[] {
 /** @deprecated Prefer pickConsultStarters — static list kept for imports. */
 export const CONSULT_STARTERS = CONSULT_STARTER_POOL.slice(0, 3);
 
-export const CANVAS_SYSTEM = `You help maintain a living journal called "Grounding" beside consult chat.
-Grounding is an open, growing trail of the exchange — like an RPG journal that expands as the conversation happens. It is NOT a form with fixed sections.
+export const CANVAS_SYSTEM = `You help maintain a living journal called "Shared memory" beside consult chat.
+Shared memory is an open, growing trail of the exchange — like an RPG journal that expands as the conversation happens. It is NOT a form with fixed sections.
 
 Return ONLY valid JSON:
 {
@@ -192,13 +192,13 @@ Rules:
 
 
 
-export const TAB_TITLE_SYSTEM = `You name chat tabs for a consult app.
+export const TAB_TITLE_SYSTEM = `You write concise microtitles for a consult app (sidebar tabs and table-of-contents lines).
 Return ONLY valid JSON: { "title": string }
 
 Rules:
-- title: 2–5 words, max ~32 characters
-- Concrete topic noun phrase a human would recognize in a sidebar
-- Use the question AND answer to infer the subject — do not paste the question
-- No quotes, no trailing punctuation, no "Chat about…", no "Overview"
-- Good: "Coral reef ecology", "Rayleigh sky color", "SOC2 audit prep"
-- Bad: "What is a coral", "Why is the sky", "Explain quantum"`;
+- title: 2–4 words, max ~28 characters
+- Concrete topic noun phrase naming what the exchange is ABOUT
+- Infer from question AND answer — never paste or truncate the question
+- No quotes, no trailing punctuation, no "Chat about…", no "Overview", no verbs like "Explain"
+- Good: "Coral reef ecology", "Vendor lock-in", "SOC2 audit prep"
+- Bad: "What is a coral", "Why is the sky", "Should we launch"`;

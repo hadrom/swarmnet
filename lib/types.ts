@@ -49,7 +49,7 @@ export type BriefResponse = {
 };
 
 /**
- * Kept for /api/research + /api/compact (unused by UI after Grounding merge).
+ * Kept for /api/research + /api/compact (unused by UI after Shared memory merge).
  * Not shown in the product surface.
  */
 export type WorkingNotes = {
@@ -87,7 +87,7 @@ export type ThreadMessage = {
   id: string;
   role: ChatRole;
   content: string;
-  /** Routing provenance. Grounding replies hide consult action chips. */
+  /** Routing provenance. Shared memory replies hide consult action chips. */
   kind?: MessageKind;
   confidence?: LiteResponse["confidence"];
   intent?: LiteResponse["intent"];
@@ -113,7 +113,7 @@ export function emptyNotes(): WorkingNotes {
   };
 }
 
-/** Editable ground-truth document (Grounding lane). Internal name stays CanvasDoc. */
+/** Editable ground-truth document (Shared memory lane). Internal name stays CanvasDoc. */
 export type CanvasDoc = {
   title: string;
   /** HTML body from the contenteditable surface. */
@@ -177,9 +177,9 @@ export function seedWorkingCanvas(opts?: {
   const seed = (opts?.seedAnswer ?? "").replace(/\s+/g, " ").trim();
   const title = clampTabTitle(
     opts?.title?.trim() ||
-      titleFromExchange("", seed, "Grounding") ||
-      "Grounding",
-    "Grounding",
+      titleFromExchange("", seed, "Shared memory") ||
+      "Shared memory",
+    "Shared memory",
   );
   const opener = seed
     ? `<p><em>Journal opened from consult.</em></p><hr/><p>${escapeHtml(seed.slice(0, 600))}</p>`
@@ -204,7 +204,7 @@ export function emptyCanvas(seed?: {
   const bodyHtml =
     seed?.bodyHtml ?? (bodyText ? textToHtml(bodyText) : "<p></p>");
   return {
-    title: seed?.title ?? "Grounding journal",
+    title: seed?.title ?? "Shared memory",
     bodyHtml,
     bodyText: bodyText || stripHtml(bodyHtml),
     updatedAt: Date.now(),
@@ -232,10 +232,10 @@ export function canvasConvergenceStatus(doc: CanvasDoc): {
 }
 
 /**
- * half = short excerpt from the start of the elaborate
+ * summary = short lead-in excerpt from the start of the elaborate
  * full = the entire elaborate reply (no truncation)
  */
-export type PromoteBriefMode = "half" | "full" | "bottom" | "unknowns";
+export type PromoteBriefMode = "summary" | "full" | "half" | "bottom" | "unknowns";
 
 function appendJournalEntry(bodyHtml: string, entryHtml: string): string {
   const base = (bodyHtml || "").trim();
@@ -323,17 +323,24 @@ function markdownToJournalHtml(
   return parts.join("");
 }
 
-/** Append an Elaborate reply into the Grounding journal as a new trail entry. */
+/** Append an Elaborate reply into the Shared memory journal as a new trail entry. */
 export function promoteBriefIntoCanvas(
   doc: CanvasDoc,
   brief: SavedBrief,
   mode: PromoteBriefMode,
 ): CanvasDoc {
-  // Full keeps the entire elaborate. Half is a short lead-in excerpt.
+  // Full keeps the entire elaborate. Summary is a short lead-in excerpt.
+  const kind = mode === "half" ? "summary" : mode;
   const maxChars =
-    mode === "full" ? undefined : mode === "half" || mode === "bottom" ? 420 : 280;
+    kind === "full" ? undefined : kind === "summary" || kind === "bottom" ? 420 : 280;
   const body = markdownToJournalHtml(brief.markdown, maxChars);
-  const header = `<p><strong>From elaborate · ${escapeHtml(brief.title)}</strong></p>`;
+  const label =
+    kind === "full"
+      ? "Full"
+      : kind === "summary"
+        ? "Summary"
+        : "From elaborate";
+  const header = `<p><strong>${label} · ${escapeHtml(brief.title)}</strong></p>`;
   const entry = body
     ? `${header}${body}`
     : `${header}<p>${escapeHtml(
